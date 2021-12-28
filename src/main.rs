@@ -23,9 +23,12 @@ fn main() {
     let mut input = WinitInputHelper::new();
 
     let event_loop = EventLoop::new();
+
+    let width = 800.;
+    let height = 600.;
     let _window = WindowBuilder::new()
         .with_title("D3D11")
-        .with_inner_size(LogicalSize::new(800, 600))
+        .with_inner_size(LogicalSize::new(width, height))
         .build(&event_loop)
         .unwrap();
 
@@ -37,13 +40,14 @@ fn main() {
             ..Default::default()
         },
         SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 4,
+            Count: 1,
             ..Default::default()
         },
         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        BufferCount: 1,
+        BufferCount: 2,
         OutputWindow: hwnd as isize,
         Windowed: true.into(),
+        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
         ..Default::default()
     };
 
@@ -85,15 +89,72 @@ fn main() {
             .ok()
     };
 
-    unsafe { context.OMSetRenderTargets(1, &rtv, None) };
+    let mut backbuffer_desc = Default::default();
+    unsafe { backbuffer.GetDesc(&mut backbuffer_desc) }
+
+    let depth_texture_desc = D3D11_TEXTURE2D_DESC {
+        Width: backbuffer_desc.Width,
+        Height: backbuffer_desc.Height,
+        Format: DXGI_FORMAT_D24_UNORM_S8_UINT,
+        SampleDesc: backbuffer_desc.SampleDesc,
+        Usage: D3D11_USAGE_DEFAULT,
+        BindFlags: D3D11_BIND_DEPTH_STENCIL,
+        CPUAccessFlags: 0,
+        MiscFlags: 0,
+        MipLevels: 1,
+        ArraySize: 1,
+    };
+
+    let depth_texture = unsafe {
+        device
+            .CreateTexture2D(&depth_texture_desc, std::ptr::null())
+            .expect("Creating depth texture")
+    };
+
+    let depth_stencil_view = unsafe {
+        device
+            .CreateDepthStencilView(&depth_texture, std::ptr::null())
+            .expect("Create depth stencil view")
+    };
+
+    let depth_stencil_desc = D3D11_DEPTH_STENCIL_DESC {
+        DepthEnable: true.into(),
+        DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
+        DepthFunc: D3D11_COMPARISON_LESS,
+        StencilEnable: true.into(),
+        StencilReadMask: 0xFF,
+        StencilWriteMask: 0xFF,
+        FrontFace: D3D11_DEPTH_STENCILOP_DESC {
+            StencilFailOp: D3D11_STENCIL_OP_KEEP,
+            StencilDepthFailOp: D3D11_STENCIL_OP_INCR,
+            StencilPassOp: D3D11_STENCIL_OP_KEEP,
+            StencilFunc: D3D11_COMPARISON_ALWAYS,
+        },
+        BackFace: D3D11_DEPTH_STENCILOP_DESC {
+            StencilFailOp: D3D11_STENCIL_OP_KEEP,
+            StencilDepthFailOp: D3D11_STENCIL_OP_DECR,
+            StencilPassOp: D3D11_STENCIL_OP_KEEP,
+            StencilFunc: D3D11_COMPARISON_ALWAYS,
+        },
+    };
+
+    let depth_stencil_state = unsafe {
+        device
+            .CreateDepthStencilState(&depth_stencil_desc)
+            .expect("Create depth stencil state")
+    };
+
+    unsafe {
+        context.OMSetDepthStencilState(&depth_stencil_state, 1);
+    }
 
     let rtv = rtv.expect("Create rtv for backbuffer");
 
     let mut viewport = D3D11_VIEWPORT {
         TopLeftX: 0.0,
         TopLeftY: 0.0,
-        Width: 800.0,
-        Height: 600.0,
+        Width: width,
+        Height: height,
         ..Default::default()
     };
 
@@ -258,6 +319,8 @@ fn main() {
 
     unsafe { context.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST) }
 
+    let rtv = Some(rtv);
+
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
         // It will return true when the last event has been processed and it is time to run your application logic.
@@ -279,8 +342,15 @@ fn main() {
             //    println!("The mouse position is: {:?}", input.mouse());
             //}
 
+            unsafe { context.OMSetRenderTargets(1, &rtv, &depth_stencil_view) };
             unsafe {
                 context.ClearRenderTargetView(&rtv, [0.0, 0.2, 0.4, 1.0].as_ptr());
+                context.ClearDepthStencilView(
+                    &depth_stencil_view,
+                    (D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL) as u32,
+                    1.0,
+                    0x00,
+                );
 
                 context.Draw(vertices.len() as u32, 0);
             }
