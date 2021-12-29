@@ -4,8 +4,9 @@ use windows::Win32::Graphics::{Direct3D11::*, Dxgi::IDXGISwapChain};
 use super::texture::{CoreTexture, Texture};
 
 pub enum ResourceView {
-    RenderTargetView(ID3D11RenderTargetView),
     DepthStencilView(ID3D11DepthStencilView),
+    RenderTargetView(ID3D11RenderTargetView),
+    ShaderResourceView(ID3D11ShaderResourceView),
 }
 
 pub struct Backend {
@@ -74,6 +75,26 @@ impl Backend {
         };
 
         Ok(ResourceView::RenderTargetView(raw_view))
+    }
+
+    pub fn shader_resource_view(
+        &self,
+        texture: &Texture,
+        desc: Option<D3D11_SHADER_RESOURCE_VIEW_DESC>,
+    ) -> Result<ResourceView> {
+        let desc = if let Some(desc) = desc {
+            &desc
+        } else {
+            std::ptr::null()
+        };
+
+        let raw_view = match &texture.resource {
+            CoreTexture::Texture2D(tex) => unsafe {
+                self.device.CreateShaderResourceView(tex, desc)?
+            },
+        };
+
+        Ok(ResourceView::ShaderResourceView(raw_view))
     }
 
     pub fn set_render_targets(

@@ -33,7 +33,10 @@ impl TextureDesc {
             mip_levels: Default::default(),
             array_size: 1,
             format: Default::default(),
-            sample_desc: Default::default(),
+            sample_desc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             usage: Default::default(),
             bind_flags: Default::default(),
             cpu_access_flags: Default::default(),

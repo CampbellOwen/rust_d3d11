@@ -11,6 +11,7 @@ use winit_input_helper::WinitInputHelper;
 use winit::platform::windows::WindowExtWindows;
 
 pub mod render_backend;
+use render_backend::render_stage::RenderStage;
 use render_backend::texture::{Texture, TextureDesc};
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -348,6 +349,51 @@ fn main() {
             .device_context
             .IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
     }
+
+    // GBUFFER TEST
+
+    let albedo_texture = Texture::new(
+        &backend,
+        TextureDesc::new_2d()
+            .array_size(1)
+            .bind_flags(D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE)
+            .format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .mip_levels(1)
+            .size([width as u32, height as u32, 0])
+            .usage(D3D11_USAGE_DEFAULT),
+    )
+    .expect("Create albedo texture");
+
+    let albedo_rtv = backend
+        .render_target_view(&albedo_texture, None)
+        .expect("Create albedo rtv");
+
+    let albedo_srv = backend
+        .shader_resource_view(&albedo_texture, None)
+        .expect("Create albedo srv");
+
+    let gbuffer_stage = RenderStage::new()
+        .enable_depth(true)
+        .depth_state(depth_stencil_state)
+        .render_target_attachment(&albedo_rtv)
+        .input_desc(D3D11_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 0,
+            InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        })
+        .input_desc(D3D11_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 12,
+            InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        });
 
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
