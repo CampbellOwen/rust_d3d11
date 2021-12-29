@@ -10,6 +10,9 @@ use winit_input_helper::WinitInputHelper;
 
 use winit::platform::windows::WindowExtWindows;
 
+pub mod render_backend;
+use render_backend::texture::{Texture, TextureDesc};
+
 #[derive(Default, Debug, Clone, Copy)]
 #[repr(C)]
 struct Vertex {
@@ -83,14 +86,23 @@ fn main() {
             .expect("Getting backbuffer should succeed")
     };
 
-    let rtv = unsafe {
-        device
-            .CreateRenderTargetView(&backbuffer, std::ptr::null())
-            .ok()
-    };
-
     let mut backbuffer_desc = Default::default();
     unsafe { backbuffer.GetDesc(&mut backbuffer_desc) }
+
+    let depth_desc = TextureDesc::new_2d()
+        .size([backbuffer_desc.Width, backbuffer_desc.Height, 0])
+        .format(DXGI_FORMAT_D24_UNORM_S8_UINT)
+        .sample_desc(backbuffer_desc.SampleDesc)
+        .bind_flags(D3D11_BIND_DEPTH_STENCIL)
+        .mip_levels(1);
+
+    let backend = render_backend::backend::Backend::new(device, context, swapchain);
+
+    let bb_tex = Texture::from_swapchain(backbuffer, backbuffer_desc);
+
+    let backbuffer_rtv = backend
+        .render_target_view(&bb_tex, None)
+        .expect("Create backbuffer rtv");
 
     let depth_texture_desc = D3D11_TEXTURE2D_DESC {
         Width: backbuffer_desc.Width,
@@ -105,17 +117,21 @@ fn main() {
         ArraySize: 1,
     };
 
-    let depth_texture = unsafe {
-        device
-            .CreateTexture2D(&depth_texture_desc, std::ptr::null())
-            .expect("Creating depth texture")
-    };
+    let depth_texture = Texture::new(&backend, depth_desc).expect("Create depth buffer");
+    let depth_stencil_view = backend
+        .depth_stencil_view(&depth_texture, None)
+        .expect("Create depth stencil view");
+    //let depth_texture = unsafe {
+    //    device
+    //        .CreateTexture2D(&depth_texture_desc, std::ptr::null())
+    //        .expect("Creating depth texture")
+    //};
 
-    let depth_stencil_view = unsafe {
-        device
-            .CreateDepthStencilView(&depth_texture, std::ptr::null())
-            .expect("Create depth stencil view")
-    };
+    //let depth_stencil_view = unsafe {
+    //    device
+    //        .CreateDepthStencilView(&depth_texture, std::ptr::null())
+    //        .expect("Create depth stencil view")
+    //};
 
     let depth_stencil_desc = D3D11_DEPTH_STENCIL_DESC {
         DepthEnable: true.into(),
@@ -139,16 +155,17 @@ fn main() {
     };
 
     let depth_stencil_state = unsafe {
-        device
+        backend
+            .device
             .CreateDepthStencilState(&depth_stencil_desc)
             .expect("Create depth stencil state")
     };
 
     unsafe {
-        context.OMSetDepthStencilState(&depth_stencil_state, 1);
+        backend
+            .device_context
+            .OMSetDepthStencilState(&depth_stencil_state, 1);
     }
-
-    let rtv = rtv.expect("Create rtv for backbuffer");
 
     let mut viewport = D3D11_VIEWPORT {
         TopLeftX: 0.0,
@@ -158,7 +175,7 @@ fn main() {
         ..Default::default()
     };
 
-    unsafe { context.RSSetViewports(1, &mut viewport) }
+    unsafe { backend.device_context.RSSetViewports(1, &mut viewport) }
 
     let mut vertex_shader = None;
     unsafe {
@@ -179,7 +196,8 @@ fn main() {
     let vs_blob = vertex_shader.expect("Vertex shader exists");
 
     let vertex_shader = unsafe {
-        device
+        backend
+            .device
             .CreateVertexShader(vs_blob.GetBufferPointer(), vs_blob.GetBufferSize(), &None)
             .expect("Creating vertex shader")
     };
@@ -203,17 +221,22 @@ fn main() {
     let fs_blob = fragment_shader.expect("Fragment shader exists");
 
     let fragment_shader = unsafe {
-        device
+        backend
+            .device
             .CreatePixelShader(fs_blob.GetBufferPointer(), fs_blob.GetBufferSize(), &None)
             .expect("Creating fragment shader")
     };
 
     unsafe {
-        context.VSSetShader(vertex_shader, std::ptr::null(), 0);
+        backend
+            .device_context
+            .VSSetShader(vertex_shader, std::ptr::null(), 0);
     };
 
     unsafe {
-        context.PSSetShader(fragment_shader, std::ptr::null(), 0);
+        backend
+            .device_context
+            .PSSetShader(fragment_shader, std::ptr::null(), 0);
     }
 
     let vertices = [
@@ -238,7 +261,8 @@ fn main() {
     ];
 
     let vertex_buffer = unsafe {
-        device
+        backend
+            .device
             .CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: std::mem::size_of::<Vertex>() as u32 * vertices.len() as u32,
@@ -253,7 +277,8 @@ fn main() {
     };
 
     let mapped_buffer = unsafe {
-        context
+        backend
+            .device_context
             .Map(&vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0)
             .expect("Map vertex buffer")
     };
@@ -266,7 +291,7 @@ fn main() {
     }
 
     unsafe {
-        context.Unmap(&vertex_buffer, 0);
+        backend.device_context.Unmap(&vertex_buffer, 0);
     }
 
     let input_desc = [
@@ -291,7 +316,8 @@ fn main() {
     ];
 
     let input_layout = unsafe {
-        device
+        backend
+            .device
             .CreateInputLayout(
                 input_desc.as_ptr(),
                 2,
@@ -302,13 +328,13 @@ fn main() {
     };
 
     unsafe {
-        context.IASetInputLayout(&input_layout);
+        backend.device_context.IASetInputLayout(&input_layout);
     }
 
     let strides = [std::mem::size_of::<Vertex>() as u32];
     let offsets = [0];
     unsafe {
-        context.IASetVertexBuffers(
+        backend.device_context.IASetVertexBuffers(
             0,
             1,
             &Some(vertex_buffer),
@@ -317,9 +343,11 @@ fn main() {
         )
     }
 
-    unsafe { context.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST) }
-
-    let rtv = Some(rtv);
+    unsafe {
+        backend
+            .device_context
+            .IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
+    }
 
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
@@ -341,22 +369,28 @@ fn main() {
             //    println!("The mouse diff is: {:?}", mouse_diff);
             //    println!("The mouse position is: {:?}", input.mouse());
             //}
+            backend.set_render_targets(
+                std::slice::from_ref(&backbuffer_rtv),
+                Some(&depth_stencil_view),
+            );
 
-            unsafe { context.OMSetRenderTargets(1, &rtv, &depth_stencil_view) };
+            backend
+                .clear_render_target_view(&backbuffer_rtv, [0.0, 0.2, 0.4, 1.0])
+                .expect("Clearing RTV");
+
+            backend
+                .clear_depth_stencil_view(&depth_stencil_view)
+                .expect("Clearing depth stencil view");
+
             unsafe {
-                context.ClearRenderTargetView(&rtv, [0.0, 0.2, 0.4, 1.0].as_ptr());
-                context.ClearDepthStencilView(
-                    &depth_stencil_view,
-                    (D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL) as u32,
-                    1.0,
-                    0x00,
-                );
-
-                context.Draw(vertices.len() as u32, 0);
+                backend.device_context.Draw(vertices.len() as u32, 0);
             }
 
             unsafe {
-                swapchain.Present(0, 0).expect("Presenting swapchain");
+                backend
+                    .swap_chain
+                    .Present(0, 0)
+                    .expect("Presenting swapchain");
             }
         }
     });
