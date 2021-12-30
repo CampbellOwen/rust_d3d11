@@ -1,10 +1,10 @@
 use windows::{
     core::*,
     Win32::Graphics::Direct3D11::*,
-    Win32::Graphics::Dxgi::{Common::*, DXGI_SWAP_CHAIN_DESC, DXGI_USAGE_RENDER_TARGET_OUTPUT},
+    Win32::Graphics::Dxgi::{Common::*, DXGI_SWAP_CHAIN_DESC},
 };
 
-use super::backend::{Backend, ResourceView};
+use super::backend::Backend;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TextureType {

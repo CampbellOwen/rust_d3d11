@@ -99,7 +99,7 @@ impl Backend {
 
     pub fn set_render_targets(
         &self,
-        render_targets: &[ResourceView],
+        render_targets: &[&ResourceView],
         depth_view: Option<&ResourceView>,
     ) {
         let rtvs: Vec<Option<ID3D11RenderTargetView>> = render_targets
@@ -163,5 +163,74 @@ impl Backend {
         } else {
             Err(Error::fast_error(HRESULT::from_win32(0x80070057))) // E_INVALIDARG
         }
+    }
+
+    pub fn set_pixel_shader_attachments(
+        &self,
+        attachments: &[&ResourceView],
+        start_slot: u32,
+    ) -> Result<()> {
+        // FOR NOW
+        for (i, &srv) in attachments.iter().enumerate() {
+            if let ResourceView::ShaderResourceView(srv) = srv {
+                unsafe {
+                    let s = srv.to_owned();
+                    self.device_context
+                        .PSSetShaderResources(start_slot + i as u32, 1, &Some(s))
+                }
+            }
+        }
+
+        //let srvs: Vec<Option<&ID3D11ShaderResourceView>> = attachments
+        //    .iter()
+        //    .filter_map(|srv| {
+        //        if let ResourceView::ShaderResourceView(srv) = srv {
+        //            Some(Some(srv))
+        //        } else {
+        //            None
+        //        }
+        //    })
+        //    .collect();
+
+        //unsafe {
+        //    self.device_context
+        //        .PSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
+        //}
+
+        Ok(())
+    }
+
+    pub fn set_vertex_shader_attachments(
+        &self,
+        attachments: &[&ResourceView],
+        start_slot: u32,
+    ) -> Result<()> {
+        // FOR NOW
+        for (i, &srv) in attachments.iter().enumerate() {
+            if let ResourceView::ShaderResourceView(srv) = srv {
+                unsafe {
+                    let s = srv.to_owned();
+                    self.device_context
+                        .VSSetShaderResources(start_slot + i as u32, 1, &Some(s))
+                }
+            }
+        }
+        //let srvs: Vec<Option<ID3D11ShaderResourceView>> = attachments
+        //    .iter()
+        //    .filter_map(|srv| {
+        //        if let ResourceView::ShaderResourceView(srv) = srv {
+        //            Some(Some(*srv))
+        //        } else {
+        //            None
+        //        }
+        //    })
+        //    .collect();
+
+        //unsafe {
+        //    self.device_context
+        //        .VSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
+        //}
+
+        Ok(())
     }
 }
