@@ -52,7 +52,7 @@ impl Backend {
                 .CreateDepthStencilView(texture.texture.clone(), desc)?
         };
 
-        return Ok(dsv);
+        Ok(dsv)
     }
 
     pub fn render_target_view(

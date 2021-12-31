@@ -12,6 +12,7 @@ pub mod render_backend;
 mod simple_triangle;
 use simple_triangle::SimpleTriangleScene;
 
+mod simple_gbuffer_pass;
 mod vertex_colour_stage;
 
 fn main() {

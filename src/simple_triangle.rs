@@ -8,9 +8,12 @@ use windows::Win32::{
 use crate::{
     render_backend::{
         backend::Backend,
-        render_stage::RenderStage,
-        texture::{Texture, Texture2D},
+        gpu_buffer::GPUBuffer,
+        render_pass::RenderPass,
+        shader::Shader,
+        texture::{Texture2D, TextureDescBuilder},
     },
+    simple_gbuffer_pass::create_gbuffer_pass,
     vertex_colour_stage::create_vertex_colour_stage,
 };
 
@@ -24,10 +27,10 @@ pub struct Vertex {
 }
 #[derive(Default)]
 pub struct SimpleTriangleScene {
-    pub render_stage: Option<RenderStage>,
+    pub render_passes: Vec<RenderPass>,
     pub backend: Option<Backend>,
     pub vertices: Vec<Vertex>,
-    pub vertex_buffer: Option<ID3D11Buffer>,
+    pub vertex_buffer: Option<GPUBuffer>,
 }
 
 impl SimpleTriangleScene {
@@ -75,31 +78,18 @@ impl SimpleTriangleScene {
         let swapchain = swapchain.expect("Swapchain should be created");
         let context = context.expect("DeviceContext should be created");
 
-        let backbuffer = unsafe {
-            swapchain
-                .GetBuffer::<ID3D11Texture2D>(0)
-                .expect("Getting backbuffer should succeed")
-        };
-
-        let mut backbuffer_desc = Default::default();
-        unsafe { backbuffer.GetDesc(&mut backbuffer_desc) }
-
         let backend = Backend::new(device, context, swapchain);
 
-        let bb_tex = Texture2D {
-            texture: backbuffer,
-            desc: backbuffer_desc,
-            phantom: PhantomData,
-        };
+        let backbuffer = backend.backbuffer(0).expect("Get backbuffer texture");
 
         let backbuffer_rtv = backend
-            .render_target_view(&bb_tex, None)
+            .render_target_view(&backbuffer, None)
             .expect("Create backbuffer rtv");
 
         let width = 800.0;
         let height = 600.0;
 
-        let mut viewport = D3D11_VIEWPORT {
+        let viewport = D3D11_VIEWPORT {
             TopLeftX: 0.0,
             TopLeftY: 0.0,
             Width: width,
@@ -107,7 +97,7 @@ impl SimpleTriangleScene {
             ..Default::default()
         };
 
-        unsafe { backend.device_context.RSSetViewports(1, &mut viewport) }
+        unsafe { backend.device_context.RSSetViewports(1, &viewport) }
 
         let vertices = vec![
             Vertex {
@@ -130,38 +120,25 @@ impl SimpleTriangleScene {
             },
         ];
 
-        let vertex_buffer = unsafe {
-            backend
-                .device
-                .CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: std::mem::size_of::<Vertex>() as u32 * vertices.len() as u32,
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_VERTEX_BUFFER,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                        ..Default::default()
-                    },
-                    std::ptr::null(),
-                )
-                .expect("Create vertex buffer")
-        };
+        let vertex_buffer = GPUBuffer::new(
+            &backend,
+            D3D11_BUFFER_DESC {
+                ByteWidth: std::mem::size_of::<Vertex>() as u32 * vertices.len() as u32,
+                Usage: D3D11_USAGE_DYNAMIC,
+                BindFlags: D3D11_BIND_VERTEX_BUFFER,
+                CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
+                ..Default::default()
+            },
+        )
+        .expect("Creating vertex buffer");
 
-        let mapped_buffer = unsafe {
-            backend
-                .device_context
-                .Map(&vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0)
-                .expect("Map vertex buffer")
-        };
+        {
+            let mapped_buffer = vertex_buffer.map(&backend).expect("Mapping vertex buffer");
 
-        unsafe {
-            mapped_buffer.pData.copy_from(
-                vertices.as_ptr() as _,
+            mapped_buffer.copy_from(
+                vertices.as_ptr(),
                 std::mem::size_of::<Vertex>() * vertices.len(),
             );
-        }
-
-        unsafe {
-            backend.device_context.Unmap(&vertex_buffer, 0);
         }
 
         unsafe {
@@ -170,10 +147,144 @@ impl SimpleTriangleScene {
                 .IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
         }
 
-        let render_stage = Some(create_vertex_colour_stage(&backend, backbuffer_rtv));
+        let input_desc = [
+            D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32B32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 0,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 12,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+        ];
+
+        let depth_stencil_desc = D3D11_DEPTH_STENCIL_DESC {
+            DepthEnable: true.into(),
+            DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
+            DepthFunc: D3D11_COMPARISON_LESS,
+            StencilEnable: true.into(),
+            StencilReadMask: 0xFF,
+            StencilWriteMask: 0xFF,
+            FrontFace: D3D11_DEPTH_STENCILOP_DESC {
+                StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                StencilDepthFailOp: D3D11_STENCIL_OP_INCR,
+                StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                StencilFunc: D3D11_COMPARISON_ALWAYS,
+            },
+            BackFace: D3D11_DEPTH_STENCILOP_DESC {
+                StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                StencilDepthFailOp: D3D11_STENCIL_OP_DECR,
+                StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                StencilFunc: D3D11_COMPARISON_ALWAYS,
+            },
+        };
+
+        let depth_stencil_state = unsafe {
+            backend
+                .device
+                .CreateDepthStencilState(&depth_stencil_desc)
+                .expect("Create depth stencil state")
+        };
+
+        let position_texture = Texture2D::new(
+            &backend,
+            TextureDescBuilder::new()
+                .size([width as u32, height as u32, 0])
+                .mip_levels(1)
+                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET)
+                .build_texture2d(),
+        )
+        .expect("Creating position texture");
+        let position_rtv = backend
+            .render_target_view(&position_texture, None)
+            .expect("Create position rtv");
+        let position_srv = backend
+            .shader_resource_view(&position_texture, None)
+            .expect("Create position srv");
+
+        let albedo_texture = Texture2D::new(
+            &backend,
+            TextureDescBuilder::new()
+                .size([width as u32, height as u32, 0])
+                .mip_levels(1)
+                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET)
+                .build_texture2d(),
+        )
+        .expect("Creating albedo texture");
+        let albedo_rtv = backend
+            .render_target_view(&albedo_texture, None)
+            .expect("Create albedo rtv");
+        let albedo_srv = backend
+            .shader_resource_view(&albedo_texture, None)
+            .expect("Create albedo srv");
+
+        let normal_texture = Texture2D::new(
+            &backend,
+            TextureDescBuilder::new()
+                .size([width as u32, height as u32, 0])
+                .mip_levels(1)
+                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET)
+                .build_texture2d(),
+        )
+        .expect("Creating normal texture");
+        let normal_rtv = backend
+            .render_target_view(&normal_texture, None)
+            .expect("Create normal rtv");
+
+        let normal_srv = backend
+            .shader_resource_view(&normal_texture, None)
+            .expect("Create normal srv");
+
+        let gbuffer_pass = RenderPass::new()
+            .enable_depth(true)
+            .depth_state(depth_stencil_state.clone())
+            .render_target_attachment(position_rtv)
+            .render_target_attachment(albedo_rtv)
+            .render_target_attachment(normal_rtv)
+            .vertex_shader(
+                &backend,
+                Shader::vertex_shader(&backend, "gbuffer.hlsl", "vertex")
+                    .expect("Create vertex shader"),
+                &input_desc,
+            )
+            .pixel_shader(
+                Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
+                    .expect("Create pixel shader"),
+            );
+
+        let vertex_colour_pass = RenderPass::new()
+            .enable_depth(true)
+            .depth_state(depth_stencil_state)
+            .render_target_attachment(backbuffer_rtv)
+            .shader_resource(position_srv)
+            .shader_resource(albedo_srv)
+            .shader_resource(normal_srv)
+            .vertex_shader(
+                &backend,
+                Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")
+                    .expect("Create vertex shader"),
+                &input_desc,
+            )
+            .pixel_shader(
+                Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
+                    .expect("Creating pixel shader"),
+            );
 
         SimpleTriangleScene {
-            render_stage: render_stage,
+            render_passes: vec![gbuffer_pass, vertex_colour_pass],
             backend: Some(backend),
             vertices,
             vertex_buffer: Some(vertex_buffer),
@@ -181,7 +292,7 @@ impl SimpleTriangleScene {
     }
 
     pub fn render(&self) {
-        if self.render_stage.is_none() || self.backend.is_none() {
+        if self.render_passes.is_empty() || self.backend.is_none() {
             return;
         }
         let backend = self.backend.as_ref().unwrap();
@@ -192,25 +303,32 @@ impl SimpleTriangleScene {
             backend.device_context.IASetVertexBuffers(
                 0,
                 1,
-                &self.vertex_buffer,
+                &Some(self.vertex_buffer.as_ref().unwrap().buffer.clone()),
                 strides.as_ptr(),
                 offsets.as_ptr(),
             )
         }
 
-        if let Some(render_stage) = &self.render_stage {
-            render_stage.bind(backend).expect("Binding shader stage");
+        let gbuffer_pass = &self.render_passes[0];
+        gbuffer_pass.bind(backend).expect("Binding gbuffer pass");
+        unsafe {
+            backend.device_context.Draw(self.vertices.len() as u32, 0);
+        }
 
-            unsafe {
-                backend.device_context.Draw(self.vertices.len() as u32, 0);
-            }
+        let vertex_colour_pass = &self.render_passes[1];
+        vertex_colour_pass
+            .bind(backend)
+            .expect("Binding vertex colour pass");
 
-            unsafe {
-                backend
-                    .swap_chain
-                    .Present(0, 0)
-                    .expect("Presenting swapchain");
-            }
+        unsafe {
+            backend.device_context.Draw(self.vertices.len() as u32, 0);
+        }
+
+        unsafe {
+            backend
+                .swap_chain
+                .Present(0, 0)
+                .expect("Presenting swapchain");
         }
     }
 }

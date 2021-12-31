@@ -1,4 +1,5 @@
 pub mod backend;
-pub mod render_stage;
+pub mod gpu_buffer;
+pub mod render_pass;
 pub mod shader;
 pub mod texture;

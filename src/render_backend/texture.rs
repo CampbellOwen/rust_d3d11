@@ -15,7 +15,6 @@ pub enum TextureType {
 
 #[derive(Clone, Copy)]
 pub struct TextureDescBuilder {
-    tex_type: TextureType,
     size: [u32; 3],
     mip_levels: u32,
     array_size: u32,
@@ -28,9 +27,8 @@ pub struct TextureDescBuilder {
 }
 
 impl TextureDescBuilder {
-    pub fn new(tex_type: TextureType) -> TextureDescBuilder {
+    pub fn new() -> TextureDescBuilder {
         TextureDescBuilder {
-            tex_type,
             size: Default::default(),
             mip_levels: Default::default(),
             array_size: 1,
@@ -44,9 +42,6 @@ impl TextureDescBuilder {
             cpu_access_flags: Default::default(),
             misc_flags: Default::default(),
         }
-    }
-    pub fn new_2d() -> TextureDescBuilder {
-        TextureDescBuilder::new(TextureType::Texture2D)
     }
 
     pub fn size(mut self, size: [u32; 3]) -> Self {
@@ -110,6 +105,12 @@ impl TextureDescBuilder {
     }
 }
 
+impl Default for TextureDescBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait D3DTextureDesc {}
 
 impl D3DTextureDesc for D3D11_TEXTURE2D_DESC {}
@@ -117,7 +118,6 @@ impl D3DTextureDesc for D3D11_TEXTURE2D_DESC {}
 impl From<DXGI_SWAP_CHAIN_DESC> for TextureDescBuilder {
     fn from(desc: DXGI_SWAP_CHAIN_DESC) -> Self {
         Self {
-            tex_type: TextureType::Texture2D,
             size: [desc.BufferDesc.Width, desc.BufferDesc.Height, 0],
             mip_levels: 1,
             array_size: 1,
@@ -134,7 +134,6 @@ impl From<DXGI_SWAP_CHAIN_DESC> for TextureDescBuilder {
 impl From<D3D11_TEXTURE2D_DESC> for TextureDescBuilder {
     fn from(desc: D3D11_TEXTURE2D_DESC) -> Self {
         Self {
-            tex_type: TextureType::Texture2D,
             size: [desc.Width, desc.Height, 0],
             mip_levels: desc.MipLevels,
             array_size: desc.ArraySize,

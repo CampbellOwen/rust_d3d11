@@ -1,9 +1,11 @@
 use crate::render_backend::{backend::Backend, render_pass::RenderPass, shader::Shader};
 use windows::Win32::{Foundation::*, Graphics::Direct3D11::*, Graphics::Dxgi::Common::*};
 
-pub fn create_vertex_colour_stage(
+pub fn create_gbuffer_pass(
     backend: &Backend,
-    backbuffer_rtv: ID3D11RenderTargetView,
+    position: ID3D11RenderTargetView,
+    albedo: ID3D11RenderTargetView,
+    normal: ID3D11RenderTargetView,
 ) -> RenderPass {
     let input_desc = [
         D3D11_INPUT_ELEMENT_DESC {
@@ -57,15 +59,15 @@ pub fn create_vertex_colour_stage(
     RenderPass::new()
         .enable_depth(true)
         .depth_state(depth_stencil_state)
-        .render_target_attachment(backbuffer_rtv)
+        .render_target_attachment(position)
+        .render_target_attachment(albedo)
+        .render_target_attachment(normal)
         .vertex_shader(
             backend,
-            Shader::vertex_shader(backend, "vertex_shader.hlsl", "main")
-                .expect("Create vertex shader"),
+            Shader::vertex_shader(backend, "gbuffer.hlsl", "vertex").expect("Create vertex shader"),
             &input_desc,
         )
         .pixel_shader(
-            Shader::pixel_shader(backend, "fragment_shader.hlsl", "main")
-                .expect("Create pixel shader"),
+            Shader::pixel_shader(backend, "gbuffer.hlsl", "pixel").expect("Create pixel shader"),
         )
 }

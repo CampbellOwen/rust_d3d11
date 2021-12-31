@@ -12,7 +12,7 @@ pub struct DepthAttachment {
 }
 
 #[derive(Default)]
-pub struct RenderStage {
+pub struct RenderPass {
     depth_attachment: DepthAttachment,
     input_desc: Option<ID3D11InputLayout>,
     shader_resources: Vec<ID3D11ShaderResourceView>,
@@ -22,8 +22,8 @@ pub struct RenderStage {
     // compute????
 }
 
-impl RenderStage {
-    pub fn new() -> RenderStage {
+impl RenderPass {
+    pub fn new() -> RenderPass {
         Default::default()
     }
 
@@ -135,7 +135,7 @@ impl RenderStage {
             }
         }
 
-        backend.set_render_targets(self.render_target_attachments.as_slice(), &depth_attachment);
+        backend.set_render_targets(self.render_target_attachments.as_slice(), depth_attachment);
 
         backend.set_pixel_shader_attachments(&self.shader_resources, 0);
         backend.set_vertex_shader_attachments(&self.shader_resources, 0);
