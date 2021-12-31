@@ -16,7 +16,7 @@ pub struct RenderPass {
     depth_attachment: DepthAttachment,
     input_desc: Option<ID3D11InputLayout>,
     shader_resources: Vec<ID3D11ShaderResourceView>,
-    render_target_attachments: Vec<ID3D11RenderTargetView>,
+    render_targets: Vec<ID3D11RenderTargetView>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
     // compute????
@@ -49,8 +49,8 @@ impl RenderPass {
         self
     }
 
-    pub fn render_target_attachment(mut self, rtv: ID3D11RenderTargetView) -> Self {
-        self.render_target_attachments.push(rtv);
+    pub fn render_target(mut self, rtv: ID3D11RenderTargetView) -> Self {
+        self.render_targets.push(rtv);
 
         self
     }
@@ -94,7 +94,7 @@ impl RenderPass {
     }
 
     pub fn clear(&self, backend: &Backend) -> Result<()> {
-        for rtv in &self.render_target_attachments {
+        for rtv in &self.render_targets {
             backend.clear_render_target_view(rtv, [0.0, 0.0, 0.0, 1.0]);
         }
 
@@ -138,7 +138,7 @@ impl RenderPass {
             }
         }
 
-        backend.set_render_targets(self.render_target_attachments.as_slice(), depth_attachment);
+        backend.set_render_targets(self.render_targets.as_slice(), depth_attachment);
 
         backend.set_pixel_shader_attachments(&self.shader_resources, 0);
         backend.set_vertex_shader_attachments(&self.shader_resources, 0);

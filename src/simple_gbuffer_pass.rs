@@ -59,9 +59,9 @@ pub fn create_gbuffer_pass(
     RenderPass::new()
         .enable_depth(true)
         .depth_state(depth_stencil_state)
-        .render_target_attachment(position)
-        .render_target_attachment(albedo)
-        .render_target_attachment(normal)
+        .render_target(position)
+        .render_target(albedo)
+        .render_target(normal)
         .vertex_shader(
             backend,
             Shader::vertex_shader(backend, "gbuffer.hlsl", "vertex").expect("Create vertex shader"),

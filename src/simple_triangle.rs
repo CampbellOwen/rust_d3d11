@@ -251,9 +251,9 @@ impl SimpleTriangleScene {
         let gbuffer_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state.clone())
-            .render_target_attachment(position_rtv)
-            .render_target_attachment(albedo_rtv)
-            .render_target_attachment(normal_rtv)
+            .render_target(position_rtv)
+            .render_target(albedo_rtv)
+            .render_target(normal_rtv)
             .vertex_shader(
                 &backend,
                 Shader::vertex_shader(&backend, "gbuffer.hlsl", "vertex")
@@ -268,10 +268,10 @@ impl SimpleTriangleScene {
         let vertex_colour_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state)
-            .render_target_attachment(backbuffer_rtv)
             .shader_resource(position_srv)
             .shader_resource(albedo_srv)
             .shader_resource(normal_srv)
+            .render_target(backbuffer_rtv)
             .vertex_shader(
                 &backend,
                 Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")

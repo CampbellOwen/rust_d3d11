@@ -57,7 +57,7 @@ pub fn create_vertex_colour_stage(
     RenderPass::new()
         .enable_depth(true)
         .depth_state(depth_stencil_state)
-        .render_target_attachment(backbuffer_rtv)
+        .render_target(backbuffer_rtv)
         .vertex_shader(
             backend,
             Shader::vertex_shader(backend, "vertex_shader.hlsl", "main")
