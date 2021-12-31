@@ -114,6 +114,9 @@ impl RenderPass {
             &None
         };
 
+        backend.set_render_targets(&[], &None);
+        backend.unbind_shader_resources();
+
         if self.depth_attachment.bind_depth_buffer {
             if let Some(depth_state) = &self.depth_attachment.depth_state {
                 unsafe {

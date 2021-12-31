@@ -151,4 +151,20 @@ impl Backend {
                 .VSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
         }
     }
+
+    pub fn unbind_shader_resources(&self) {
+        let num = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
+
+        let mut srvs = Vec::with_capacity(num as usize);
+        for _ in 0..num {
+            srvs.push(None);
+        }
+
+        unsafe {
+            self.device_context
+                .PSSetShaderResources(0, num, srvs.as_ptr());
+            self.device_context
+                .VSSetShaderResources(0, num, srvs.as_ptr());
+        }
+    }
 }
