@@ -14,14 +14,6 @@ use simple_triangle::SimpleTriangleScene;
 
 mod vertex_colour_stage;
 
-static mut TRIANGLE_SCENE: SimpleTriangleScene = SimpleTriangleScene {
-    buffers: Vec::new(),
-    render_stage: None,
-    backend: None,
-    vertices: Vec::new(),
-    vertex_buffer: None,
-};
-
 fn main() {
     let mut input = WinitInputHelper::new();
 
@@ -37,10 +29,7 @@ fn main() {
 
     let hwnd = _window.hwnd();
 
-    unsafe {
-        TRIANGLE_SCENE = SimpleTriangleScene::new(hwnd as HWND);
-        TRIANGLE_SCENE.setup();
-    }
+    let triangle_scene = SimpleTriangleScene::new(hwnd as HWND);
 
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
@@ -52,9 +41,7 @@ fn main() {
                 return;
             }
 
-            unsafe {
-                TRIANGLE_SCENE.render();
-            }
+            triangle_scene.render();
 
             //// query keypresses this update
             //if input.key_pressed(VirtualKeyCode::A) {

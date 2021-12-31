@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D::*, Direct3D11::*, Dxgi::Common::*, Dxgi::*},
@@ -5,9 +7,9 @@ use windows::Win32::{
 
 use crate::{
     render_backend::{
-        backend::{Backend, ResourceView},
+        backend::Backend,
         render_stage::RenderStage,
-        texture::Texture,
+        texture::{Texture, Texture2D},
     },
     vertex_colour_stage::create_vertex_colour_stage,
 };
@@ -21,15 +23,14 @@ pub struct Vertex {
     colour: [f32; 4],
 }
 #[derive(Default)]
-pub struct SimpleTriangleScene<'a> {
-    pub buffers: Vec<ResourceView>,
-    pub render_stage: Option<RenderStage<'a>>,
+pub struct SimpleTriangleScene {
+    pub render_stage: Option<RenderStage>,
     pub backend: Option<Backend>,
     pub vertices: Vec<Vertex>,
     pub vertex_buffer: Option<ID3D11Buffer>,
 }
 
-impl<'a> SimpleTriangleScene<'a> {
+impl SimpleTriangleScene {
     pub fn new(hwnd: HWND) -> Self {
         let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
             BufferDesc: DXGI_MODE_DESC {
@@ -85,7 +86,11 @@ impl<'a> SimpleTriangleScene<'a> {
 
         let backend = Backend::new(device, context, swapchain);
 
-        let bb_tex = Texture::from_swapchain(backbuffer, backbuffer_desc);
+        let bb_tex = Texture2D {
+            texture: backbuffer,
+            desc: backbuffer_desc,
+            phantom: PhantomData,
+        };
 
         let backbuffer_rtv = backend
             .render_target_view(&bb_tex, None)
@@ -165,20 +170,13 @@ impl<'a> SimpleTriangleScene<'a> {
                 .IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
         }
 
-        let buffers = vec![backbuffer_rtv];
+        let render_stage = Some(create_vertex_colour_stage(&backend, backbuffer_rtv));
 
         SimpleTriangleScene {
-            buffers,
-            render_stage: None,
+            render_stage: render_stage,
             backend: Some(backend),
             vertices,
             vertex_buffer: Some(vertex_buffer),
-        }
-    }
-
-    pub fn setup(&'a mut self) {
-        if let Some(backend) = &self.backend {
-            self.render_stage = Some(create_vertex_colour_stage(&backend, &self.buffers[0]));
         }
     }
 

@@ -1,13 +1,9 @@
-use windows::core::{Error, Result, HRESULT};
+use std::marker::PhantomData;
+
+use windows::core::Result;
 use windows::Win32::Graphics::{Direct3D11::*, Dxgi::IDXGISwapChain};
 
-use super::texture::{CoreTexture, Texture};
-
-pub enum ResourceView {
-    DepthStencilView(ID3D11DepthStencilView),
-    RenderTargetView(ID3D11RenderTargetView),
-    ShaderResourceView(ID3D11ShaderResourceView),
-}
+use super::texture::{D3DTexture, D3DTextureDesc, Texture, Texture2D};
 
 pub struct Backend {
     pub device: ID3D11Device,
@@ -28,209 +24,131 @@ impl Backend {
         }
     }
 
-    pub fn backbuffer(&self, buffer: u32) -> Result<Texture> {
+    pub fn backbuffer(&self, buffer: u32) -> Result<Texture2D> {
         let raw_backbuffer: ID3D11Texture2D = unsafe { self.swap_chain.GetBuffer(buffer)? };
         let mut backbuffer_desc = Default::default();
         unsafe { raw_backbuffer.GetDesc(&mut backbuffer_desc) }
 
-        Ok(Texture::from_swapchain(raw_backbuffer, backbuffer_desc))
+        Ok(Texture2D {
+            desc: backbuffer_desc,
+            texture: raw_backbuffer,
+            phantom: PhantomData,
+        })
     }
 
     pub fn depth_stencil_view(
         &self,
-        texture: &Texture,
+        texture: &Texture2D,
         desc: Option<D3D11_DEPTH_STENCIL_VIEW_DESC>,
-    ) -> Result<ResourceView> {
-        if let CoreTexture::Texture2D(raw_texture) = &texture.resource {
-            let raw_view = if let Some(desc) = desc {
-                unsafe { self.device.CreateDepthStencilView(raw_texture, &desc)? }
-            } else {
-                unsafe {
-                    self.device
-                        .CreateDepthStencilView(raw_texture, std::ptr::null())?
-                }
-            };
+    ) -> Result<ID3D11DepthStencilView> {
+        let desc = if let Some(desc) = desc {
+            &desc
+        } else {
+            std::ptr::null()
+        };
 
-            return Ok(ResourceView::DepthStencilView(raw_view));
-        }
+        let dsv = unsafe {
+            self.device
+                .CreateDepthStencilView(texture.texture.clone(), desc)?
+        };
 
-        Err(Error::fast_error(HRESULT::from_win32(0x80070057))) // E_INVALIDARG
+        return Ok(dsv);
     }
 
     pub fn render_target_view(
         &self,
-        texture: &Texture,
+        texture: &Texture2D,
         desc: Option<D3D11_RENDER_TARGET_VIEW_DESC>,
-    ) -> Result<ResourceView> {
+    ) -> Result<ID3D11RenderTargetView> {
         let desc = if let Some(desc) = desc {
             &desc
         } else {
             std::ptr::null()
         };
 
-        let raw_view = match &texture.resource {
-            CoreTexture::Texture2D(tex) => unsafe {
-                self.device.CreateRenderTargetView(tex, desc)?
-            },
-        };
-
-        Ok(ResourceView::RenderTargetView(raw_view))
+        unsafe {
+            self.device
+                .CreateRenderTargetView(texture.texture.clone(), desc)
+        }
     }
 
-    pub fn shader_resource_view(
+    pub fn shader_resource_view<'a, T, D>(
         &self,
-        texture: &Texture,
+        texture: &Texture<'a, T, D>,
         desc: Option<D3D11_SHADER_RESOURCE_VIEW_DESC>,
-    ) -> Result<ResourceView> {
+    ) -> Result<ID3D11ShaderResourceView>
+    where
+        T: D3DTexture<'a>,
+        D: D3DTextureDesc,
+    {
         let desc = if let Some(desc) = desc {
             &desc
         } else {
             std::ptr::null()
         };
 
-        let raw_view = match &texture.resource {
-            CoreTexture::Texture2D(tex) => unsafe {
-                self.device.CreateShaderResourceView(tex, desc)?
-            },
-        };
-
-        Ok(ResourceView::ShaderResourceView(raw_view))
+        unsafe {
+            self.device
+                .CreateShaderResourceView(texture.texture.clone(), desc)
+        }
     }
 
     pub fn set_render_targets(
         &self,
-        render_targets: &[&ResourceView],
-        depth_view: Option<&ResourceView>,
+        render_targets: &[ID3D11RenderTargetView],
+        depth_view: &Option<ID3D11DepthStencilView>,
     ) {
-        let rtvs: Vec<Option<ID3D11RenderTargetView>> = render_targets
-            .iter()
-            .filter_map(|rtv| {
-                if let ResourceView::RenderTargetView(rtv) = rtv {
-                    Some(rtv.clone())
-                } else {
-                    None
-                }
-            })
-            .map(|rtv| Some(rtv))
-            .collect();
-
-        let depth_view = if let Some(dsv) = depth_view {
-            if let ResourceView::DepthStencilView(dsv) = dsv {
-                Some(dsv.clone())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
+        let rtvs: Vec<Option<ID3D11RenderTargetView>> =
+            render_targets.iter().map(|rtv| Some(rtv.clone())).collect();
         unsafe {
-            self.device_context.OMSetRenderTargets(
-                render_targets.len() as u32,
-                rtvs.as_ptr(),
-                depth_view,
-            )
+            self.device_context
+                .OMSetRenderTargets(rtvs.len() as u32, rtvs.as_ptr(), depth_view)
         };
     }
 
-    pub fn clear_render_target_view(
-        &self,
-        rtv: &ResourceView,
-        clear_colour: [f32; 4],
-    ) -> Result<()> {
-        if let ResourceView::RenderTargetView(rtv) = rtv {
-            unsafe {
-                self.device_context
-                    .ClearRenderTargetView(rtv, clear_colour.as_ptr())
-            }
-            Ok(())
-        } else {
-            Err(Error::fast_error(HRESULT::from_win32(0x80070057))) // E_INVALIDARG
+    pub fn clear_render_target_view(&self, rtv: &ID3D11RenderTargetView, clear_colour: [f32; 4]) {
+        unsafe {
+            self.device_context
+                .ClearRenderTargetView(rtv, clear_colour.as_ptr())
         }
     }
 
-    pub fn clear_depth_stencil_view(&self, dsv: &ResourceView) -> Result<()> {
-        if let ResourceView::DepthStencilView(dsv) = dsv {
-            unsafe {
-                self.device_context.ClearDepthStencilView(
-                    dsv,
-                    (D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL) as u32,
-                    1.0,
-                    0x00,
-                );
-            }
-            Ok(())
-        } else {
-            Err(Error::fast_error(HRESULT::from_win32(0x80070057))) // E_INVALIDARG
+    pub fn clear_depth_stencil_view(&self, dsv: &ID3D11DepthStencilView) {
+        unsafe {
+            self.device_context.ClearDepthStencilView(
+                dsv,
+                (D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL) as u32,
+                1.0,
+                0x00,
+            );
         }
     }
 
     pub fn set_pixel_shader_attachments(
         &self,
-        attachments: &[&ResourceView],
+        attachments: &[ID3D11ShaderResourceView],
         start_slot: u32,
-    ) -> Result<()> {
-        // FOR NOW
-        for (i, &srv) in attachments.iter().enumerate() {
-            if let ResourceView::ShaderResourceView(srv) = srv {
-                unsafe {
-                    let s = srv.to_owned();
-                    self.device_context
-                        .PSSetShaderResources(start_slot + i as u32, 1, &Some(s))
-                }
-            }
+    ) {
+        let srvs: Vec<Option<ID3D11ShaderResourceView>> =
+            attachments.iter().map(|srv| Some(srv.clone())).collect();
+
+        unsafe {
+            self.device_context
+                .PSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
         }
-
-        //let srvs: Vec<Option<&ID3D11ShaderResourceView>> = attachments
-        //    .iter()
-        //    .filter_map(|srv| {
-        //        if let ResourceView::ShaderResourceView(srv) = srv {
-        //            Some(Some(srv))
-        //        } else {
-        //            None
-        //        }
-        //    })
-        //    .collect();
-
-        //unsafe {
-        //    self.device_context
-        //        .PSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
-        //}
-
-        Ok(())
     }
 
     pub fn set_vertex_shader_attachments(
         &self,
-        attachments: &[&ResourceView],
+        attachments: &[ID3D11ShaderResourceView],
         start_slot: u32,
-    ) -> Result<()> {
-        // FOR NOW
-        for (i, &srv) in attachments.iter().enumerate() {
-            if let ResourceView::ShaderResourceView(srv) = srv {
-                unsafe {
-                    let s = srv.to_owned();
-                    self.device_context
-                        .VSSetShaderResources(start_slot + i as u32, 1, &Some(s))
-                }
-            }
+    ) {
+        let srvs: Vec<Option<ID3D11ShaderResourceView>> =
+            attachments.iter().map(|srv| Some(srv.clone())).collect();
+
+        unsafe {
+            self.device_context
+                .VSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
         }
-        //let srvs: Vec<Option<ID3D11ShaderResourceView>> = attachments
-        //    .iter()
-        //    .filter_map(|srv| {
-        //        if let ResourceView::ShaderResourceView(srv) = srv {
-        //            Some(Some(*srv))
-        //        } else {
-        //            None
-        //        }
-        //    })
-        //    .collect();
-
-        //unsafe {
-        //    self.device_context
-        //        .VSSetShaderResources(start_slot, srvs.len() as u32, srvs.as_ptr());
-        //}
-
-        Ok(())
     }
 }

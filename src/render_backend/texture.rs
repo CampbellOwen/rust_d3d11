@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use windows::{
     core::*,
     Win32::Graphics::Direct3D11::*,
@@ -12,7 +14,7 @@ pub enum TextureType {
 }
 
 #[derive(Clone, Copy)]
-pub struct TextureDesc {
+pub struct TextureDescBuilder {
     tex_type: TextureType,
     size: [u32; 3],
     mip_levels: u32,
@@ -25,9 +27,9 @@ pub struct TextureDesc {
     misc_flags: D3D11_RESOURCE_MISC_FLAG,
 }
 
-impl TextureDesc {
-    pub fn new(tex_type: TextureType) -> TextureDesc {
-        TextureDesc {
+impl TextureDescBuilder {
+    pub fn new(tex_type: TextureType) -> TextureDescBuilder {
+        TextureDescBuilder {
             tex_type,
             size: Default::default(),
             mip_levels: Default::default(),
@@ -43,8 +45,8 @@ impl TextureDesc {
             misc_flags: Default::default(),
         }
     }
-    pub fn new_2d() -> TextureDesc {
-        TextureDesc::new(TextureType::Texture2D)
+    pub fn new_2d() -> TextureDescBuilder {
+        TextureDescBuilder::new(TextureType::Texture2D)
     }
 
     pub fn size(mut self, size: [u32; 3]) -> Self {
@@ -91,9 +93,28 @@ impl TextureDesc {
         self.misc_flags = misc_flags;
         self
     }
+
+    pub fn build_texture2d(&self) -> D3D11_TEXTURE2D_DESC {
+        D3D11_TEXTURE2D_DESC {
+            Width: self.size[0],
+            Height: self.size[1],
+            MipLevels: self.mip_levels,
+            ArraySize: self.array_size,
+            Format: self.format,
+            SampleDesc: self.sample_desc,
+            Usage: self.usage,
+            BindFlags: self.bind_flags,
+            CPUAccessFlags: self.cpu_access_flags,
+            MiscFlags: self.misc_flags,
+        }
+    }
 }
 
-impl From<DXGI_SWAP_CHAIN_DESC> for TextureDesc {
+pub trait D3DTextureDesc {}
+
+impl D3DTextureDesc for D3D11_TEXTURE2D_DESC {}
+
+impl From<DXGI_SWAP_CHAIN_DESC> for TextureDescBuilder {
     fn from(desc: DXGI_SWAP_CHAIN_DESC) -> Self {
         Self {
             tex_type: TextureType::Texture2D,
@@ -110,7 +131,7 @@ impl From<DXGI_SWAP_CHAIN_DESC> for TextureDesc {
     }
 }
 
-impl From<D3D11_TEXTURE2D_DESC> for TextureDesc {
+impl From<D3D11_TEXTURE2D_DESC> for TextureDescBuilder {
     fn from(desc: D3D11_TEXTURE2D_DESC) -> Self {
         Self {
             tex_type: TextureType::Texture2D,
@@ -127,57 +148,29 @@ impl From<D3D11_TEXTURE2D_DESC> for TextureDesc {
     }
 }
 
-pub enum CoreTexture {
-    Texture2D(ID3D11Texture2D),
+pub trait D3DTexture<'a>: IntoParam<'a, ID3D11Resource> + Clone {}
+impl<'a> D3DTexture<'a> for ID3D11Texture2D {}
+
+pub struct Texture<'a, T, D>
+where
+    T: D3DTexture<'a> + IntoParam<'a, ID3D11Resource>,
+    D: D3DTextureDesc,
+{
+    pub texture: T,
+    pub desc: D,
+    pub phantom: PhantomData<&'a T>,
 }
 
-impl CoreTexture {
-    //pub fn resource(&self) -> &ID3D11Resource {
-    //    match &self {
-    //        &CoreTexture::Texture2D(raw_texture) => raw_texture.into_param::<&ID3D11Resource>(),
-    //    }
-    //}
-}
+pub type Texture2D<'a> = Texture<'a, ID3D11Texture2D, D3D11_TEXTURE2D_DESC>;
 
-pub struct Texture {
-    pub resource: CoreTexture,
-    pub desc: TextureDesc,
-}
-
-impl Texture {
-    pub fn new(backend: &Backend, desc: TextureDesc) -> Result<Texture> {
-        let core_texture = match desc.tex_type {
-            TextureType::Texture2D => {
-                let core_desc = D3D11_TEXTURE2D_DESC {
-                    Width: desc.size[0],
-                    Height: desc.size[1],
-                    MipLevels: desc.mip_levels,
-                    ArraySize: desc.array_size,
-                    Format: desc.format,
-                    SampleDesc: desc.sample_desc,
-                    Usage: desc.usage,
-                    BindFlags: desc.bind_flags,
-                    CPUAccessFlags: desc.cpu_access_flags,
-                    MiscFlags: desc.misc_flags,
-                };
-                CoreTexture::Texture2D(unsafe {
-                    backend
-                        .device
-                        .CreateTexture2D(&core_desc, std::ptr::null())?
-                })
-            }
-        };
+impl<'a> Texture2D<'a> {
+    pub fn new(backend: &Backend, desc: D3D11_TEXTURE2D_DESC) -> Result<Texture2D> {
+        let texture = unsafe { backend.device.CreateTexture2D(&desc, std::ptr::null())? };
 
         Ok(Texture {
             desc,
-            resource: core_texture,
+            texture,
+            phantom: PhantomData,
         })
-    }
-
-    pub fn from_swapchain(buffer: ID3D11Texture2D, desc: D3D11_TEXTURE2D_DESC) -> Texture {
-        let desc = TextureDesc::from(desc);
-        let resource = CoreTexture::Texture2D(buffer);
-
-        Texture { desc, resource }
     }
 }

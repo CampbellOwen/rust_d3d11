@@ -1,14 +1,10 @@
-use crate::render_backend::{
-    backend::{Backend, ResourceView},
-    render_stage::RenderStage,
-    shader::Shader,
-};
+use crate::render_backend::{backend::Backend, render_stage::RenderStage, shader::Shader};
 use windows::Win32::{Foundation::*, Graphics::Direct3D11::*, Graphics::Dxgi::Common::*};
 
 pub fn create_vertex_colour_stage<'a>(
     backend: &Backend,
-    backbuffer_rtv: &'a ResourceView,
-) -> RenderStage<'a> {
+    backbuffer_rtv: ID3D11RenderTargetView,
+) -> RenderStage {
     let input_desc = [
         D3D11_INPUT_ELEMENT_DESC {
             SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
@@ -61,7 +57,7 @@ pub fn create_vertex_colour_stage<'a>(
     RenderStage::new()
         .enable_depth(true)
         .depth_state(depth_stencil_state)
-        .render_target_attachment(&backbuffer_rtv)
+        .render_target_attachment(backbuffer_rtv)
         .vertex_shader(
             &backend,
             Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")

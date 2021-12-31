@@ -1,32 +1,29 @@
 use windows::core::Result;
-use windows::Win32::Graphics::Direct3D11::{
-    ID3D11DepthStencilState, ID3D11InputLayout, D3D11_INPUT_ELEMENT_DESC,
-};
+use windows::Win32::Graphics::Direct3D11::*;
 
 use super::backend::Backend;
-use super::backend::ResourceView;
 use super::shader::Shader;
 
 #[derive(Default)]
-pub struct DepthAttachment<'a> {
+pub struct DepthAttachment {
     bind_depth_buffer: bool,
     depth_state: Option<ID3D11DepthStencilState>,
-    depth_view: Option<&'a ResourceView>,
+    depth_view: Option<ID3D11DepthStencilView>,
 }
 
 #[derive(Default)]
-pub struct RenderStage<'a> {
-    depth_attachment: DepthAttachment<'a>,
+pub struct RenderStage {
+    depth_attachment: DepthAttachment,
     input_desc: Option<ID3D11InputLayout>,
-    shader_resources: Vec<&'a ResourceView>,
-    render_target_attachments: Vec<&'a ResourceView>,
+    shader_resources: Vec<ID3D11ShaderResourceView>,
+    render_target_attachments: Vec<ID3D11RenderTargetView>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
     // compute????
 }
 
-impl<'a> RenderStage<'a> {
-    pub fn new() -> RenderStage<'a> {
+impl RenderStage {
+    pub fn new() -> RenderStage {
         Default::default()
     }
 
@@ -40,32 +37,20 @@ impl<'a> RenderStage<'a> {
         self
     }
 
-    pub fn depth_stencil_view(mut self, depth_stencil_view: &'a ResourceView) -> Self {
-        if let ResourceView::DepthStencilView(_) = depth_stencil_view {
-            self.depth_attachment.depth_view = Some(depth_stencil_view);
-        } else {
-            panic!("Attaching a non DepthStencilView as a shader resource attachment");
-        }
+    pub fn depth_stencil_view(mut self, depth_stencil_view: ID3D11DepthStencilView) -> Self {
+        self.depth_attachment.depth_view = Some(depth_stencil_view);
 
         self
     }
 
-    pub fn shader_resource(mut self, srv: &'a ResourceView) -> Self {
-        if let ResourceView::ShaderResourceView(_) = srv {
-            self.shader_resources.push(srv);
-        } else {
-            panic!("Attaching a non ShaderResourceView as a shader resource attachment");
-        }
+    pub fn shader_resource(mut self, srv: ID3D11ShaderResourceView) -> Self {
+        self.shader_resources.push(srv);
 
         self
     }
 
-    pub fn render_target_attachment(mut self, rtv: &'a ResourceView) -> Self {
-        if let ResourceView::RenderTargetView(_) = rtv {
-            self.render_target_attachments.push(rtv);
-        } else {
-            panic!("Attaching a non RenderTargetView as a render target attachment");
-        }
+    pub fn render_target_attachment(mut self, rtv: ID3D11RenderTargetView) -> Self {
+        self.render_target_attachments.push(rtv);
 
         self
     }
@@ -109,13 +94,13 @@ impl<'a> RenderStage<'a> {
     }
 
     pub fn clear(&self, backend: &Backend) -> Result<()> {
-        for &rtv in &self.render_target_attachments {
-            backend.clear_render_target_view(rtv, [0.0, 0.0, 0.0, 1.0])?;
+        for rtv in &self.render_target_attachments {
+            backend.clear_render_target_view(rtv, [0.0, 0.0, 0.0, 1.0]);
         }
 
         if self.depth_attachment.bind_depth_buffer {
-            if let Some(depth) = self.depth_attachment.depth_view {
-                backend.clear_depth_stencil_view(depth)?;
+            if let Some(depth) = &self.depth_attachment.depth_view {
+                backend.clear_depth_stencil_view(depth);
             }
         }
 
@@ -124,9 +109,9 @@ impl<'a> RenderStage<'a> {
 
     pub fn bind(&self, backend: &Backend) -> Result<()> {
         let depth_attachment = if self.depth_attachment.bind_depth_buffer {
-            self.depth_attachment.depth_view
+            &self.depth_attachment.depth_view
         } else {
-            None
+            &None
         };
 
         if self.depth_attachment.bind_depth_buffer {
@@ -150,24 +135,16 @@ impl<'a> RenderStage<'a> {
             }
         }
 
-        backend.set_render_targets(self.render_target_attachments.as_slice(), depth_attachment);
+        backend.set_render_targets(self.render_target_attachments.as_slice(), &depth_attachment);
 
-        backend
-            .set_pixel_shader_attachments(&self.shader_resources, 0)
-            .expect("Setting pixel shader attachments");
-        backend
-            .set_vertex_shader_attachments(&self.shader_resources, 0)
-            .expect("Setting pixel shader attachments");
+        backend.set_pixel_shader_attachments(&self.shader_resources, 0);
+        backend.set_vertex_shader_attachments(&self.shader_resources, 0);
 
         if let Some(layout) = &self.input_desc {
             unsafe {
                 backend.device_context.IASetInputLayout(layout);
             }
         }
-
-        //unsafe {backend.device_context.OMSetRenderTargets(self.render_target_attachments.len() as u32, self.render_target_attachments.as_ptr(), depth_attachment);}
-
-        //self.shader_resources
 
         Ok(())
     }
