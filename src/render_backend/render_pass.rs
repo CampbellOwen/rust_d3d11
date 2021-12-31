@@ -17,6 +17,7 @@ pub struct RenderPass {
     input_desc: Option<ID3D11InputLayout>,
     shader_resources: Vec<ID3D11ShaderResourceView>,
     render_targets: Vec<ID3D11RenderTargetView>,
+    sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
     // compute????
@@ -51,6 +52,12 @@ impl RenderPass {
 
     pub fn render_target(mut self, rtv: ID3D11RenderTargetView) -> Self {
         self.render_targets.push(rtv);
+
+        self
+    }
+
+    pub fn sampler_state(mut self, sample_state: ID3D11SamplerState) -> Self {
+        self.sampler_states.push(sample_state);
 
         self
     }
@@ -137,6 +144,8 @@ impl RenderPass {
                 backend.device_context.VSSetShader(s, std::ptr::null(), 0);
             }
         }
+
+        backend.set_sampler_states(self.sampler_states.as_slice());
 
         backend.set_render_targets(self.render_targets.as_slice(), depth_attachment);
 

@@ -167,4 +167,18 @@ impl Backend {
                 .VSSetShaderResources(0, num, srvs.as_ptr());
         }
     }
+
+    pub fn set_sampler_states(&self, sampler_states: &[ID3D11SamplerState]) {
+        let samplers: Vec<Option<ID3D11SamplerState>> = sampler_states
+            .iter()
+            .map(|state| Some(state.clone()))
+            .collect();
+
+        unsafe {
+            self.device_context
+                .PSSetSamplers(0, samplers.len() as u32, samplers.as_ptr());
+            self.device_context
+                .VSSetSamplers(0, samplers.len() as u32, samplers.as_ptr());
+        }
+    }
 }

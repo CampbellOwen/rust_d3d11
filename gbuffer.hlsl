@@ -6,18 +6,28 @@ struct Vout
     float3 ws_position: POSITIONT;
     float4 colour: COLOR;
     float3 normal: NORMAL;
+    float2 uv: TEXCOORD;
+};
+
+struct Vin {
+    float3 position: POSITION;
+    float4 colour: COLOR;
+    float3 normal: NORMAL;
+    float2 uv : TEXCOORD;
 };
 
 
-Vout vertex(float3 position: POSITION, float4 colour : COLOR) {
+Vout vertex(Vin input) {
     Vout output;
-    output.position = float4(position, 1.0);
-    output.ws_position = position;
-    output.colour = colour;
-    output.normal = float3(0.0, 0.0, 1.0);
+    output.position = float4(input.position, 1.0);
+    output.ws_position = input.position;
+    output.colour = input.colour;
+    output.normal = input.normal;
+    output.uv = input.uv;
 
     return output;
 }
+
 
 struct Pout {
     float4 position: SV_Target0;
@@ -26,13 +36,13 @@ struct Pout {
 };
 
 
-Pout pixel(float4 position : SV_POSITION, float3 ws_position : POSITIONT, float4 colour: COLOR, float3 normal: NORMAL) {
+Pout pixel(Vout input) {
 
     Pout output;
 
-    output.position = float4((ws_position * 0.5) + 0.5, 1.0);
-    output.albedo = colour;
-    output.normal = float4((normal * 0.5) + 0.5, 1.0);
+    output.position = float4((input.ws_position * 0.5) + 0.5, 1.0);
+    output.albedo = input.colour;
+    output.normal = float4((input.normal * 0.5) + 0.5, 1.0);
 
     return output;
 }
