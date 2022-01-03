@@ -1,20 +1,14 @@
-use std::marker::PhantomData;
-
 use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D::*, Direct3D11::*, Dxgi::Common::*, Dxgi::*},
 };
 
-use crate::{
-    render_backend::{
-        backend::Backend,
-        gpu_buffer::GPUBuffer,
-        render_pass::RenderPass,
-        shader::Shader,
-        texture::{Texture2D, TextureDescBuilder},
-    },
-    simple_gbuffer_pass::create_gbuffer_pass,
-    vertex_colour_stage::create_vertex_colour_stage,
+use crate::render_backend::{
+    backend::Backend,
+    gpu_buffer::GPUBuffer,
+    render_pass::RenderPass,
+    shader::Shader,
+    texture::{Texture2D, TextureDescBuilder},
 };
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -143,10 +137,7 @@ impl SimpleTriangleScene {
         {
             let mapped_buffer = vertex_buffer.map(&backend).expect("Mapping vertex buffer");
 
-            mapped_buffer.copy_from(
-                vertices.as_ptr(),
-                std::mem::size_of::<Vertex>() * vertices.len(),
-            );
+            mapped_buffer.copy_from(vertices.as_slice());
         }
 
         let quad_vertices = [
@@ -192,10 +183,7 @@ impl SimpleTriangleScene {
             let mapped_buffer = quad_vertex_buffer
                 .map(&backend)
                 .expect("Mapping vertex buffer");
-            mapped_buffer.copy_from(
-                quad_vertices.as_ptr(),
-                std::mem::size_of::<QuadVertex>() * quad_vertices.len(),
-            );
+            mapped_buffer.copy_from(&quad_vertices);
         }
 
         unsafe {
@@ -364,6 +352,8 @@ impl SimpleTriangleScene {
                 .expect("Creating sampler")
         };
 
+        let gbuffer_vertex_buffer = vertex_buffer.clone();
+        let num_vertices = vertices.len();
         let gbuffer_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state.clone())
@@ -379,8 +369,28 @@ impl SimpleTriangleScene {
             .pixel_shader(
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
-            );
+            )
+            .execution(Box::new(move |_: &RenderPass, backend: &Backend| {
+                let strides = [std::mem::size_of::<Vertex>() as u32];
+                let offsets = [0];
+                unsafe {
+                    backend.device_context.IASetVertexBuffers(
+                        0,
+                        1,
+                        &Some(gbuffer_vertex_buffer.buffer.clone()),
+                        strides.as_ptr(),
+                        offsets.as_ptr(),
+                    )
+                }
 
+                unsafe {
+                    backend.device_context.Draw(num_vertices as u32, 0);
+                }
+
+                Ok(())
+            }));
+
+        let quad_vertex_buffer_copy = quad_vertex_buffer.clone();
         let vertex_colour_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state)
@@ -398,7 +408,25 @@ impl SimpleTriangleScene {
             .pixel_shader(
                 Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
                     .expect("Creating pixel shader"),
-            );
+            )
+            .execution(Box::new(move |_: &RenderPass, backend: &Backend| {
+                let strides = [std::mem::size_of::<QuadVertex>() as u32];
+                let offsets = [0];
+                unsafe {
+                    backend.device_context.IASetVertexBuffers(
+                        0,
+                        1,
+                        &Some(quad_vertex_buffer_copy.buffer.clone()),
+                        strides.as_ptr(),
+                        offsets.as_ptr(),
+                    )
+                }
+                unsafe {
+                    backend.device_context.Draw(6, 0);
+                }
+
+                Ok(())
+            }));
 
         SimpleTriangleScene {
             render_passes: vec![gbuffer_pass, vertex_colour_pass],
@@ -415,44 +443,9 @@ impl SimpleTriangleScene {
         }
         let backend = self.backend.as_ref().unwrap();
 
-        let strides = [std::mem::size_of::<Vertex>() as u32];
-        let offsets = [0];
-        unsafe {
-            backend.device_context.IASetVertexBuffers(
-                0,
-                1,
-                &Some(self.vertex_buffer.as_ref().unwrap().buffer.clone()),
-                strides.as_ptr(),
-                offsets.as_ptr(),
-            )
-        }
-
-        let gbuffer_pass = &self.render_passes[0];
-        gbuffer_pass.bind(backend).expect("Binding gbuffer pass");
-        unsafe {
-            backend.device_context.Draw(self.vertices.len() as u32, 0);
-        }
-
-        let strides = [std::mem::size_of::<QuadVertex>() as u32];
-        let offsets = [0];
-        unsafe {
-            backend.device_context.IASetVertexBuffers(
-                0,
-                1,
-                &Some(self.quad_vertex_buffer.as_ref().unwrap().buffer.clone()),
-                strides.as_ptr(),
-                offsets.as_ptr(),
-            )
-        }
-
-        let vertex_colour_pass = &self.render_passes[1];
-        vertex_colour_pass
-            .bind(backend)
-            .expect("Binding vertex colour pass");
-
-        unsafe {
-            backend.device_context.Draw(6, 0);
-        }
+        self.render_passes.iter().for_each(|pass| {
+            pass.execute(backend).expect("Execute render pass");
+        });
 
         unsafe {
             backend

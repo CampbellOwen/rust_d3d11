@@ -1,4 +1,4 @@
-use windows::core::Result;
+use windows::core::{Error, Result};
 use windows::Win32::Graphics::Direct3D11::*;
 
 use super::backend::Backend;
@@ -20,7 +20,7 @@ pub struct RenderPass {
     sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
-    // compute????
+    execution: Option<Box<dyn Fn(&Self, &Backend) -> Result<()>>>,
 }
 
 impl RenderPass {
@@ -100,6 +100,12 @@ impl RenderPass {
         self
     }
 
+    pub fn execution(mut self, func: Box<dyn Fn(&Self, &Backend) -> Result<()>>) -> Self {
+        self.execution = Some(func);
+
+        self
+    }
+
     pub fn clear(&self, backend: &Backend) -> Result<()> {
         for rtv in &self.render_targets {
             backend.clear_render_target_view(rtv, [0.0, 0.0, 0.0, 1.0]);
@@ -159,5 +165,19 @@ impl RenderPass {
         }
 
         Ok(())
+    }
+
+    pub fn execute(&self, backend: &Backend) -> Result<()> {
+        debug_assert!(self.execution.is_some());
+        if let Some(func) = &self.execution {
+            self.bind(backend)?;
+
+            func(self, backend)?;
+            Ok(())
+        } else {
+            Err(Error::fast_error(windows::core::HRESULT::from_win32(
+                0x80004005,
+            )))
+        }
     }
 }

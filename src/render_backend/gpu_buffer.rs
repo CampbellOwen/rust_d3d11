@@ -2,6 +2,8 @@ use windows::core::*;
 use windows::Win32::Graphics::Direct3D11::*;
 
 use super::backend::Backend;
+
+#[derive(Clone)]
 pub struct GPUBuffer {
     pub desc: D3D11_BUFFER_DESC,
     pub buffer: ID3D11Buffer,
@@ -35,10 +37,15 @@ impl<'a, 'b> GPUBuffer {
 }
 
 impl<'a, 'b> MappedGPUBuffer<'a, 'b> {
-    pub fn copy_from<T>(&self, data: *const T, num_bytes: usize) {
+    pub fn copy_from<T>(&self, data: &[T])
+    where
+        T: Sized,
+    {
         unsafe {
-            self.subresource.pData.copy_from(data as _, num_bytes);
-        };
+            self.subresource
+                .pData
+                .copy_from(data.as_ptr() as _, data.len() * std::mem::size_of::<T>());
+        }
     }
 }
 
