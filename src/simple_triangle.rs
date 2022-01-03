@@ -1,3 +1,4 @@
+use glam::{Vec2, Vec3};
 use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D::*, Direct3D11::*, Dxgi::Common::*, Dxgi::*},
@@ -6,19 +7,11 @@ use windows::Win32::{
 use crate::render_backend::{
     backend::Backend,
     gpu_buffer::GPUBuffer,
+    mesh::*,
     render_pass::RenderPass,
     shader::Shader,
     texture::{Texture2D, TextureDescBuilder},
 };
-
-#[derive(Default, Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Vertex {
-    position: [f32; 3],
-    colour: [f32; 4],
-    normal: [f32; 3],
-    uv: [f32; 2],
-}
 
 #[repr(C)]
 struct QuadVertex {
@@ -30,9 +23,12 @@ struct QuadVertex {
 pub struct SimpleTriangleScene {
     pub render_passes: Vec<RenderPass>,
     pub backend: Option<Backend>,
-    pub vertices: Vec<Vertex>,
+    pub meshes: Vec<GpuMesh>,
     pub vertex_buffer: Option<GPUBuffer>,
+    pub index_buffer: Option<GPUBuffer>,
     pub quad_vertex_buffer: Option<GPUBuffer>,
+    pub quad_index_buffer: Option<GPUBuffer>,
+    pub quad_mesh: Option<GpuMesh>,
 }
 
 impl SimpleTriangleScene {
@@ -103,88 +99,62 @@ impl SimpleTriangleScene {
 
         let vertices = vec![
             Vertex {
-                position: [0.0, 0.5, 0.0],
-                colour: [1.0, 0.0, 0.0, 1.0],
-                normal: [0.0, 0.0, 1.0],
-                uv: [0.5, 1.0],
+                position: Vec3::from([0.0, 0.5, 0.0]),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(0.5, 1.0),
             },
             Vertex {
-                position: [0.45, -0.5, 0.0],
-                colour: [0.0, 1.0, 0.0, 1.0],
-                normal: [0.0, 0.0, 1.0],
-                uv: [1.0, 0.0],
+                position: Vec3::new(0.45, -0.5, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(1.0, 0.0),
             },
             Vertex {
-                position: [-0.45, -0.5, 0.0],
-                colour: [0.0, 0.0, 1.0, 1.0],
-                normal: [0.0, 0.0, 1.0],
-                uv: [0.0, 0.0],
+                position: Vec3::new(-0.45, -0.5, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(0.0, 0.0),
             },
         ];
 
-        let vertex_buffer = GPUBuffer::new(
-            &backend,
-            D3D11_BUFFER_DESC {
-                ByteWidth: std::mem::size_of::<Vertex>() as u32 * vertices.len() as u32,
-                Usage: D3D11_USAGE_DYNAMIC,
-                BindFlags: D3D11_BIND_VERTEX_BUFFER,
-                CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                ..Default::default()
-            },
-        )
-        .expect("Creating vertex buffer");
+        let cpu_mesh = CpuMesh {
+            vertices,
+            indices: vec![0, 1, 2],
+        };
 
-        {
-            let mapped_buffer = vertex_buffer.map(&backend).expect("Mapping vertex buffer");
+        let (gpu_meshes, vertex_buffer, index_buffer) =
+            upload_meshes(&backend, &[cpu_mesh]).expect("Uploading triangle mesh");
 
-            mapped_buffer.copy_from(vertices.as_slice());
-        }
-
-        let quad_vertices = [
-            QuadVertex {
-                position: [-1.0, -1.0, 0.0],
-                uv: [0.0, 1.0],
+        let quad_vertices = vec![
+            Vertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(0.0, 1.0),
             },
-            QuadVertex {
-                position: [-1.0, 1.0, 0.0],
-                uv: [0.0, 0.0],
+            Vertex {
+                position: Vec3::new(-1.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(0.0, 0.0),
             },
-            QuadVertex {
-                position: [1.0, -1.0, 0.0],
-                uv: [1.0, 1.0],
+            Vertex {
+                position: Vec3::new(1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(1.0, 1.0),
             },
-            QuadVertex {
-                position: [1.0, -1.0, 0.0],
-                uv: [1.0, 1.0],
-            },
-            QuadVertex {
-                position: [-1.0, 1.0, 0.0],
-                uv: [0.0, 0.0],
-            },
-            QuadVertex {
-                position: [1.0, 1.0, 0.0],
-                uv: [1.0, 0.0],
+            Vertex {
+                position: Vec3::new(1.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+                uv: Vec2::new(1.0, 0.0),
             },
         ];
 
-        let quad_vertex_buffer = GPUBuffer::new(
-            &backend,
-            D3D11_BUFFER_DESC {
-                ByteWidth: std::mem::size_of::<QuadVertex>() as u32 * quad_vertices.len() as u32,
-                Usage: D3D11_USAGE_DYNAMIC,
-                BindFlags: D3D11_BIND_VERTEX_BUFFER,
-                CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                ..Default::default()
-            },
-        )
-        .expect("Create quad vertex buffer");
+        let quad_indices = vec![0, 1, 2, 2, 1, 3];
 
-        {
-            let mapped_buffer = quad_vertex_buffer
-                .map(&backend)
-                .expect("Mapping vertex buffer");
-            mapped_buffer.copy_from(&quad_vertices);
-        }
+        let quad_cpu_mesh = CpuMesh {
+            vertices: quad_vertices,
+            indices: quad_indices,
+        };
+
+        let (gpu_quad_mesh, quad_vertex_buffer, quad_index_buffer) =
+            upload_meshes(&backend, &[quad_cpu_mesh]).expect("Creating quad mesh");
 
         unsafe {
             backend
@@ -203,50 +173,20 @@ impl SimpleTriangleScene {
                 InstanceDataStepRate: 0,
             },
             D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 12,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D11_INPUT_ELEMENT_DESC {
                 SemanticName: PSTR(b"NORMAL\0".as_ptr() as _),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32_FLOAT,
                 InputSlot: 0,
-                AlignedByteOffset: 28,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"TEXCOORD\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 40,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-        ];
-
-        let full_screen_quad_input_desc = [
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 0,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"TEXCOORD\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32_FLOAT,
-                InputSlot: 0,
                 AlignedByteOffset: 12,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(b"TEXCOORD\0".as_ptr() as _),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 24,
                 InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
                 InstanceDataStepRate: 0,
             },
@@ -369,30 +309,17 @@ impl SimpleTriangleScene {
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
             )
-            .execution(Box::new(
-                move |pass, backend, vertex_buffer, num_vertices, offset| {
-                    pass.clear(backend).expect("Clearing rtv");
+            .execution(Box::new(move |pass, backend, mesh: &GpuMesh| {
+                pass.clear(backend).expect("Clearing rtv");
 
-                    let strides = [pass.vertex_stride];
-                    let offsets = [offset];
+                unsafe {
+                    backend
+                        .device_context
+                        .DrawIndexed(mesh.num_indices, mesh.index_offset, 0);
+                }
 
-                    unsafe {
-                        backend.device_context.IASetVertexBuffers(
-                            0,
-                            1,
-                            &Some(vertex_buffer.buffer.clone()),
-                            strides.as_ptr(),
-                            offsets.as_ptr(),
-                        )
-                    }
-
-                    unsafe {
-                        backend.device_context.Draw(num_vertices, 0);
-                    }
-
-                    Ok(())
-                },
-            ));
+                Ok(())
+            }));
 
         let gbuffer_combination_pass = RenderPass::new()
             .enable_depth(true)
@@ -406,42 +333,34 @@ impl SimpleTriangleScene {
                 &backend,
                 Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")
                     .expect("Create vertex shader"),
-                &full_screen_quad_input_desc,
-                std::mem::size_of::<QuadVertex>() as u32,
+                &mesh_input_desc,
+                std::mem::size_of::<Vertex>() as u32,
             )
             .pixel_shader(
                 Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
                     .expect("Creating pixel shader"),
             )
-            .execution(Box::new(
-                move |pass, backend, vertex_buffer, num_vertices, offset| {
-                    pass.clear(backend).expect("Clearing rtv");
+            .execution(Box::new(move |pass, backend, mesh| {
+                pass.clear(backend).expect("Clearing rtv");
 
-                    let strides = [pass.vertex_stride];
-                    let offsets = [offset];
-                    unsafe {
-                        backend.device_context.IASetVertexBuffers(
-                            0,
-                            1,
-                            &Some(vertex_buffer.buffer.clone()),
-                            strides.as_ptr(),
-                            offsets.as_ptr(),
-                        )
-                    }
-                    unsafe {
-                        backend.device_context.Draw(num_vertices, 0);
-                    }
+                unsafe {
+                    backend
+                        .device_context
+                        .DrawIndexed(mesh.num_indices, mesh.index_offset, 0);
+                }
 
-                    Ok(())
-                },
-            ));
+                Ok(())
+            }));
 
         SimpleTriangleScene {
             render_passes: vec![gbuffer_pass, gbuffer_combination_pass],
             backend: Some(backend),
-            vertices,
+            meshes: gpu_meshes,
             vertex_buffer: Some(vertex_buffer),
+            index_buffer: Some(index_buffer),
+            quad_mesh: Some(gpu_quad_mesh[0]),
             quad_vertex_buffer: Some(quad_vertex_buffer),
+            quad_index_buffer: Some(quad_index_buffer),
         }
     }
 
@@ -451,17 +370,50 @@ impl SimpleTriangleScene {
         }
         let backend = self.backend.as_ref().unwrap();
 
-        self.render_passes[0]
-            .execute(
-                backend,
-                self.vertex_buffer.as_ref().unwrap(),
-                self.vertices.len() as u32,
+        unsafe {
+            backend.device_context.IASetIndexBuffer(
+                self.index_buffer.as_ref().unwrap().buffer.clone(),
+                DXGI_FORMAT_R32_UINT,
                 0,
+            );
+        }
+
+        unsafe {
+            backend.device_context.IASetVertexBuffers(
+                0,
+                1,
+                &Some(self.vertex_buffer.as_ref().unwrap().buffer.clone()),
+                [std::mem::size_of::<Vertex>() as u32].as_ptr(),
+                [0].as_ptr(),
             )
-            .expect("Execute gbuffer pass");
+        }
+
+        for mesh in &self.meshes {
+            self.render_passes[0]
+                .execute(backend, mesh)
+                .expect("Execute gbuffer pass");
+        }
+
+        unsafe {
+            backend.device_context.IASetIndexBuffer(
+                self.quad_index_buffer.as_ref().unwrap().buffer.clone(),
+                DXGI_FORMAT_R32_UINT,
+                0,
+            );
+        }
+
+        unsafe {
+            backend.device_context.IASetVertexBuffers(
+                0,
+                1,
+                &Some(self.quad_vertex_buffer.as_ref().unwrap().buffer.clone()),
+                [std::mem::size_of::<Vertex>() as u32].as_ptr(),
+                [0].as_ptr(),
+            )
+        }
 
         self.render_passes[1]
-            .execute(backend, self.quad_vertex_buffer.as_ref().unwrap(), 6, 0)
+            .execute(backend, &self.quad_mesh.as_ref().unwrap())
             .expect("Execute gbuffer combine pass");
 
         unsafe {

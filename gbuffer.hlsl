@@ -11,9 +11,9 @@ struct Vout
 
 struct Vin {
     float3 position: POSITION;
-    float4 colour: COLOR;
     float3 normal: NORMAL;
     float2 uv : TEXCOORD;
+    uint vertexId : SV_VertexID;
 };
 
 
@@ -21,7 +21,7 @@ Vout vertex(Vin input) {
     Vout output;
     output.position = float4(input.position, 1.0);
     output.ws_position = input.position;
-    output.colour = input.colour;
+    output.colour = input.vertexId == 0 ? float4(1.0, 0.0, 0.0, 1.0) : input.vertexId == 1 ? float4(0.0, 1.0, 0.0, 1.0) : float4(0.0, 0.0, 1.0, 1.0);
     output.normal = input.normal;
     output.uv = input.uv;
 

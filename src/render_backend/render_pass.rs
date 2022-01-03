@@ -2,7 +2,7 @@ use windows::core::{Error, Result};
 use windows::Win32::Graphics::Direct3D11::*;
 
 use super::backend::Backend;
-use super::gpu_buffer::GPUBuffer;
+use super::mesh::GpuMesh;
 use super::shader::Shader;
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ pub struct RenderPass {
     sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
-    execution: Option<Box<dyn Fn(&Self, &Backend, &GPUBuffer, u32, u32) -> Result<()>>>,
+    execution: Option<Box<dyn Fn(&Self, &Backend, &GpuMesh) -> Result<()>>>,
 }
 
 impl RenderPass {
@@ -104,10 +104,7 @@ impl RenderPass {
         self
     }
 
-    pub fn execution(
-        mut self,
-        func: Box<dyn Fn(&Self, &Backend, &GPUBuffer, u32, u32) -> Result<()>>,
-    ) -> Self {
+    pub fn execution(mut self, func: Box<dyn Fn(&Self, &Backend, &GpuMesh) -> Result<()>>) -> Self {
         self.execution = Some(func);
 
         self
@@ -174,18 +171,12 @@ impl RenderPass {
         Ok(())
     }
 
-    pub fn execute(
-        &self,
-        backend: &Backend,
-        vertex_buffer: &GPUBuffer,
-        num_vertices: u32,
-        offset: u32,
-    ) -> Result<()> {
+    pub fn execute(&self, backend: &Backend, mesh: &GpuMesh) -> Result<()> {
         debug_assert!(self.execution.is_some());
         if let Some(func) = &self.execution {
             self.bind(backend)?;
 
-            func(self, backend, vertex_buffer, num_vertices, offset)?;
+            func(self, backend, mesh)?;
             Ok(())
         } else {
             Err(Error::fast_error(windows::core::HRESULT::from_win32(
