@@ -371,6 +371,8 @@ impl SimpleTriangleScene {
             )
             .execution(Box::new(
                 move |pass, backend, vertex_buffer, num_vertices, offset| {
+                    pass.clear(backend).expect("Clearing rtv");
+
                     let strides = [pass.vertex_stride];
                     let offsets = [offset];
 
@@ -413,6 +415,8 @@ impl SimpleTriangleScene {
             )
             .execution(Box::new(
                 move |pass, backend, vertex_buffer, num_vertices, offset| {
+                    pass.clear(backend).expect("Clearing rtv");
+
                     let strides = [pass.vertex_stride];
                     let offsets = [offset];
                     unsafe {
