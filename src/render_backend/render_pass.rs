@@ -2,6 +2,7 @@ use windows::core::{Error, Result};
 use windows::Win32::Graphics::Direct3D11::*;
 
 use super::backend::Backend;
+use super::gpu_buffer::GPUBuffer;
 use super::shader::Shader;
 
 #[derive(Default)]
@@ -15,12 +16,13 @@ pub struct DepthAttachment {
 pub struct RenderPass {
     depth_attachment: DepthAttachment,
     input_desc: Option<ID3D11InputLayout>,
+    pub vertex_stride: u32,
     shader_resources: Vec<ID3D11ShaderResourceView>,
     render_targets: Vec<ID3D11RenderTargetView>,
     sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
-    execution: Option<Box<dyn Fn(&Self, &Backend) -> Result<()>>>,
+    execution: Option<Box<dyn Fn(&Self, &Backend, &GPUBuffer, u32, u32) -> Result<()>>>,
 }
 
 impl RenderPass {
@@ -67,6 +69,7 @@ impl RenderPass {
         backend: &Backend,
         shader: Shader,
         input_element_desc: &[D3D11_INPUT_ELEMENT_DESC],
+        vertex_stride: u32,
     ) -> Self {
         if let Shader::Vertex(_, _) = shader {
             self.vertex_shader = Some(shader);
@@ -84,6 +87,7 @@ impl RenderPass {
                         .expect("Create input layout for vertex shader")
                 };
                 self.input_desc = Some(input_layout);
+                self.vertex_stride = vertex_stride;
             }
         } else {
             panic!("Attaching a non-vertex shader to the vertex shader slot");
@@ -100,7 +104,10 @@ impl RenderPass {
         self
     }
 
-    pub fn execution(mut self, func: Box<dyn Fn(&Self, &Backend) -> Result<()>>) -> Self {
+    pub fn execution(
+        mut self,
+        func: Box<dyn Fn(&Self, &Backend, &GPUBuffer, u32, u32) -> Result<()>>,
+    ) -> Self {
         self.execution = Some(func);
 
         self
@@ -167,12 +174,18 @@ impl RenderPass {
         Ok(())
     }
 
-    pub fn execute(&self, backend: &Backend) -> Result<()> {
+    pub fn execute(
+        &self,
+        backend: &Backend,
+        vertex_buffer: &GPUBuffer,
+        num_vertices: u32,
+        offset: u32,
+    ) -> Result<()> {
         debug_assert!(self.execution.is_some());
         if let Some(func) = &self.execution {
             self.bind(backend)?;
 
-            func(self, backend)?;
+            func(self, backend, vertex_buffer, num_vertices, offset)?;
             Ok(())
         } else {
             Err(Error::fast_error(windows::core::HRESULT::from_win32(

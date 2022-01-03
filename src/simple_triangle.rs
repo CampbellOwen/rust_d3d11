@@ -352,8 +352,6 @@ impl SimpleTriangleScene {
                 .expect("Creating sampler")
         };
 
-        let gbuffer_vertex_buffer = vertex_buffer.clone();
-        let num_vertices = vertices.len();
         let gbuffer_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state.clone())
@@ -365,33 +363,36 @@ impl SimpleTriangleScene {
                 Shader::vertex_shader(&backend, "gbuffer.hlsl", "vertex")
                     .expect("Create vertex shader"),
                 &mesh_input_desc,
+                std::mem::size_of::<Vertex>() as u32,
             )
             .pixel_shader(
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
             )
-            .execution(Box::new(move |_: &RenderPass, backend: &Backend| {
-                let strides = [std::mem::size_of::<Vertex>() as u32];
-                let offsets = [0];
-                unsafe {
-                    backend.device_context.IASetVertexBuffers(
-                        0,
-                        1,
-                        &Some(gbuffer_vertex_buffer.buffer.clone()),
-                        strides.as_ptr(),
-                        offsets.as_ptr(),
-                    )
-                }
+            .execution(Box::new(
+                move |pass, backend, vertex_buffer, num_vertices, offset| {
+                    let strides = [pass.vertex_stride];
+                    let offsets = [offset];
 
-                unsafe {
-                    backend.device_context.Draw(num_vertices as u32, 0);
-                }
+                    unsafe {
+                        backend.device_context.IASetVertexBuffers(
+                            0,
+                            1,
+                            &Some(vertex_buffer.buffer.clone()),
+                            strides.as_ptr(),
+                            offsets.as_ptr(),
+                        )
+                    }
 
-                Ok(())
-            }));
+                    unsafe {
+                        backend.device_context.Draw(num_vertices, 0);
+                    }
 
-        let quad_vertex_buffer_copy = quad_vertex_buffer.clone();
-        let vertex_colour_pass = RenderPass::new()
+                    Ok(())
+                },
+            ));
+
+        let gbuffer_combination_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state)
             .shader_resource(position_srv)
@@ -404,32 +405,35 @@ impl SimpleTriangleScene {
                 Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")
                     .expect("Create vertex shader"),
                 &full_screen_quad_input_desc,
+                std::mem::size_of::<QuadVertex>() as u32,
             )
             .pixel_shader(
                 Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
                     .expect("Creating pixel shader"),
             )
-            .execution(Box::new(move |_: &RenderPass, backend: &Backend| {
-                let strides = [std::mem::size_of::<QuadVertex>() as u32];
-                let offsets = [0];
-                unsafe {
-                    backend.device_context.IASetVertexBuffers(
-                        0,
-                        1,
-                        &Some(quad_vertex_buffer_copy.buffer.clone()),
-                        strides.as_ptr(),
-                        offsets.as_ptr(),
-                    )
-                }
-                unsafe {
-                    backend.device_context.Draw(6, 0);
-                }
+            .execution(Box::new(
+                move |pass, backend, vertex_buffer, num_vertices, offset| {
+                    let strides = [pass.vertex_stride];
+                    let offsets = [offset];
+                    unsafe {
+                        backend.device_context.IASetVertexBuffers(
+                            0,
+                            1,
+                            &Some(vertex_buffer.buffer.clone()),
+                            strides.as_ptr(),
+                            offsets.as_ptr(),
+                        )
+                    }
+                    unsafe {
+                        backend.device_context.Draw(num_vertices, 0);
+                    }
 
-                Ok(())
-            }));
+                    Ok(())
+                },
+            ));
 
         SimpleTriangleScene {
-            render_passes: vec![gbuffer_pass, vertex_colour_pass],
+            render_passes: vec![gbuffer_pass, gbuffer_combination_pass],
             backend: Some(backend),
             vertices,
             vertex_buffer: Some(vertex_buffer),
@@ -443,9 +447,18 @@ impl SimpleTriangleScene {
         }
         let backend = self.backend.as_ref().unwrap();
 
-        self.render_passes.iter().for_each(|pass| {
-            pass.execute(backend).expect("Execute render pass");
-        });
+        self.render_passes[0]
+            .execute(
+                backend,
+                self.vertex_buffer.as_ref().unwrap(),
+                self.vertices.len() as u32,
+                0,
+            )
+            .expect("Execute gbuffer pass");
+
+        self.render_passes[1]
+            .execute(backend, self.quad_vertex_buffer.as_ref().unwrap(), 6, 0)
+            .expect("Execute gbuffer combine pass");
 
         unsafe {
             backend
