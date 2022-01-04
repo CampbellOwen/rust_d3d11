@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use windows::Win32::Foundation::*;
 use winit::dpi::LogicalSize;
 use winit::event::VirtualKeyCode;
@@ -32,9 +34,19 @@ fn main() {
 
     let triangle_scene = SimpleTriangleScene::new(hwnd as HWND);
 
+    let mut time = 0usize;
+
+    let mut last_time = SystemTime::now();
+
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
         // It will return true when the last event has been processed and it is time to run your application logic.
+
+        let now = SystemTime::now();
+        let delta_time = now.duration_since(last_time).expect("get delta time");
+        let delta_time = delta_time.subsec_millis();
+
+        time += delta_time as usize;
 
         if input.update(&event) {
             if input.key_released(VirtualKeyCode::Escape) || input.quit() {
@@ -42,7 +54,7 @@ fn main() {
                 return;
             }
 
-            triangle_scene.render();
+            triangle_scene.render(time, delta_time as usize);
 
             //// query keypresses this update
             //if input.key_pressed(VirtualKeyCode::A) {
@@ -56,5 +68,7 @@ fn main() {
             //    println!("The mouse position is: {:?}", input.mouse());
             //}
         }
+
+        last_time = now;
     });
 }

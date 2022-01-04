@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D::*, Direct3D11::*, Dxgi::Common::*, Dxgi::*},
@@ -14,9 +14,13 @@ use crate::render_backend::{
 };
 
 #[repr(C)]
-struct QuadVertex {
-    position: [f32; 3],
-    uv: [f32; 2],
+struct FrameConstants {
+    world_view: Mat4,
+}
+
+#[repr(C)]
+struct ModelConstants {
+    model_world: Mat4,
 }
 
 #[derive(Default)]
@@ -24,11 +28,14 @@ pub struct SimpleTriangleScene {
     pub render_passes: Vec<RenderPass>,
     pub backend: Option<Backend>,
     pub meshes: Vec<GpuMesh>,
+    pub depth_stencil_view: Option<ID3D11DepthStencilView>,
     pub vertex_buffer: Option<GPUBuffer>,
     pub index_buffer: Option<GPUBuffer>,
     pub quad_vertex_buffer: Option<GPUBuffer>,
     pub quad_index_buffer: Option<GPUBuffer>,
     pub quad_mesh: Option<GpuMesh>,
+    pub frame_constants: Option<GPUBuffer>,
+    pub model_constants: Option<GPUBuffer>,
 }
 
 impl SimpleTriangleScene {
@@ -92,36 +99,20 @@ impl SimpleTriangleScene {
             TopLeftY: 0.0,
             Width: width,
             Height: height,
+            MaxDepth: 1.0,
+            MinDepth: 0.0,
             ..Default::default()
         };
 
         unsafe { backend.device_context.RSSetViewports(1, &viewport) }
 
-        let vertices = vec![
-            Vertex {
-                position: Vec3::from([0.0, 0.5, 0.0]),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(0.5, 1.0),
-            },
-            Vertex {
-                position: Vec3::new(0.45, -0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(1.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(-0.45, -0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(0.0, 0.0),
-            },
-        ];
-
-        let cpu_mesh = CpuMesh {
-            vertices,
-            indices: vec![0, 1, 2],
-        };
+        //let cube = CpuMesh::from_obj("F:\\Models\\cube.obj").expect("Load obj");
+        //let cube = CpuMesh::from_obj("F:\\Models\\JapaneseTemple\\model_triangulated.obj")
+        let cube = CpuMesh::from_obj("F:\\Models\\lost-empire\\lost_empire_triangulated.obj")
+            .expect("Load obj");
 
         let (gpu_meshes, vertex_buffer, index_buffer) =
-            upload_meshes(&backend, &[cpu_mesh]).expect("Uploading triangle mesh");
+            GpuMesh::from_meshes(&backend, cube.as_slice()).expect("Uploading triangle mesh");
 
         let quad_vertices = vec![
             Vertex {
@@ -154,7 +145,7 @@ impl SimpleTriangleScene {
         };
 
         let (gpu_quad_mesh, quad_vertex_buffer, quad_index_buffer) =
-            upload_meshes(&backend, &[quad_cpu_mesh]).expect("Creating quad mesh");
+            GpuMesh::from_meshes(&backend, &[quad_cpu_mesh]).expect("Creating quad mesh");
 
         unsafe {
             backend
@@ -219,6 +210,21 @@ impl SimpleTriangleScene {
                 .CreateDepthStencilState(&depth_stencil_desc)
                 .expect("Create depth stencil state")
         };
+
+        let depth_texture = Texture2D::new(
+            &backend,
+            TextureDescBuilder::new()
+                .size([width as u32, height as u32, 0])
+                .mip_levels(1)
+                .format(DXGI_FORMAT_D24_UNORM_S8_UINT)
+                .bind_flags(D3D11_BIND_DEPTH_STENCIL)
+                .build_texture2d(),
+        )
+        .expect("Create depth texture");
+
+        let depth_stencil_view = backend
+            .depth_stencil_view(&depth_texture, None)
+            .expect("Create depth stencil view");
 
         let position_texture = Texture2D::new(
             &backend,
@@ -295,6 +301,7 @@ impl SimpleTriangleScene {
         let gbuffer_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state.clone())
+            .depth_stencil_view(depth_stencil_view.clone())
             .render_target(position_rtv)
             .render_target(albedo_rtv)
             .render_target(normal_rtv)
@@ -309,9 +316,7 @@ impl SimpleTriangleScene {
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
             )
-            .execution(Box::new(move |pass, backend, mesh: &GpuMesh| {
-                pass.clear(backend).expect("Clearing rtv");
-
+            .execution(Box::new(move |_, backend, mesh: &GpuMesh| {
                 unsafe {
                     backend
                         .device_context
@@ -340,9 +345,7 @@ impl SimpleTriangleScene {
                 Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
                     .expect("Creating pixel shader"),
             )
-            .execution(Box::new(move |pass, backend, mesh| {
-                pass.clear(backend).expect("Clearing rtv");
-
+            .execution(Box::new(move |_, backend, mesh| {
                 unsafe {
                     backend
                         .device_context
@@ -351,6 +354,43 @@ impl SimpleTriangleScene {
 
                 Ok(())
             }));
+
+        let frame_constants =
+            GPUBuffer::constant_buffer(&backend, std::mem::size_of::<FrameConstants>() as u32)
+                .expect("Create frame constant buffer");
+
+        let model_constants =
+            GPUBuffer::constant_buffer(&backend, std::mem::size_of::<ModelConstants>() as u32)
+                .expect("Create model constant buffer");
+
+        {
+            let mapped_frame = frame_constants
+                .map(&backend)
+                .expect("Map frame constant buffer");
+            let mapped_model = model_constants
+                .map(&backend)
+                .expect("Map model constant buffer");
+
+            let camera_pos = Vec3::new(0.0, 80.0, -70.0);
+            let focal_point = Vec3::new(0.0, 20.0, 20.0);
+
+            let view_dir = focal_point - camera_pos;
+
+            let up = view_dir.cross(Vec3::new(1.0, 0.0, 0.0));
+
+            mapped_frame.copy_from(&[FrameConstants {
+                world_view: Mat4::perspective_lh(
+                    std::f32::consts::PI / 4.0,
+                    800.0 / 600.0,
+                    0.001,
+                    1000.0,
+                ) * Mat4::look_at_lh(camera_pos, focal_point, up),
+            }]);
+
+            mapped_model.copy_from(&[ModelConstants {
+                model_world: Mat4::from_translation(Vec3::new(0.0, 0.0, 12.0)),
+            }])
+        }
 
         SimpleTriangleScene {
             render_passes: vec![gbuffer_pass, gbuffer_combination_pass],
@@ -361,10 +401,13 @@ impl SimpleTriangleScene {
             quad_mesh: Some(gpu_quad_mesh[0]),
             quad_vertex_buffer: Some(quad_vertex_buffer),
             quad_index_buffer: Some(quad_index_buffer),
+            frame_constants: Some(frame_constants),
+            model_constants: Some(model_constants),
+            depth_stencil_view: Some(depth_stencil_view),
         }
     }
 
-    pub fn render(&self) {
+    pub fn render(&self, time: usize, _: usize) {
         if self.render_passes.is_empty() || self.backend.is_none() {
             return;
         }
@@ -388,11 +431,54 @@ impl SimpleTriangleScene {
             )
         }
 
-        for mesh in &self.meshes {
-            self.render_passes[0]
-                .execute(backend, mesh)
-                .expect("Execute gbuffer pass");
+        let model_constant = self.model_constants.as_ref().unwrap();
+
+        {
+            let mapped = model_constant
+                .map(backend)
+                .expect("map model constant buffer");
+
+            let data = ModelConstants {
+                model_world: Mat4::from_scale_rotation_translation(
+                    Vec3::new(0.6, 0.6, 0.6),
+                    Quat::from_mat4(
+                        &(
+                            Mat4::from_rotation_y((time as f32 + 100 as f32) / 1000.0)
+                            //Mat4::from_rotation_y(std::f32::consts::PI / 2.0)
+                            //     * Mat4::from_rotation_x(time as f32 / 300.0)
+                            //     * Mat4::from_rotation_z((time as f32 + 200 as f32) / 300.0)
+                        ),
+                    ),
+                    Vec3::new(0.0, -10.0, 50.0),
+                ),
+            };
+
+            mapped.copy_from(&[data]);
         }
+
+        let constant_buffers = [
+            Some(self.frame_constants.as_ref().unwrap().buffer.clone()),
+            Some(self.model_constants.as_ref().unwrap().buffer.clone()),
+        ];
+
+        unsafe {
+            backend.device_context.PSSetConstantBuffers(
+                0,
+                constant_buffers.len() as u32,
+                constant_buffers.as_ptr(),
+            );
+            backend.device_context.VSSetConstantBuffers(
+                0,
+                constant_buffers.len() as u32,
+                constant_buffers.as_ptr(),
+            );
+        }
+
+        self.meshes.iter().enumerate().for_each(|(index, mesh)| {
+            self.render_passes[0]
+                .execute(backend, mesh, index == 0)
+                .expect("Execute gbuffer pass");
+        });
 
         unsafe {
             backend.device_context.IASetIndexBuffer(
@@ -413,13 +499,13 @@ impl SimpleTriangleScene {
         }
 
         self.render_passes[1]
-            .execute(backend, &self.quad_mesh.as_ref().unwrap())
+            .execute(backend, &self.quad_mesh.as_ref().unwrap(), true)
             .expect("Execute gbuffer combine pass");
 
         unsafe {
             backend
                 .swap_chain
-                .Present(0, 0)
+                .Present(1, 0)
                 .expect("Presenting swapchain");
         }
     }

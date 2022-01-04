@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 glam = "0.17.3"
+obj = "0.10.2"
 winit = "0.26.0"
 winit_input_helper = "0.11.0"
 

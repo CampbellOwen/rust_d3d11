@@ -16,13 +16,25 @@ struct Vin {
     uint vertexId : SV_VertexID;
 };
 
+cbuffer FrameConstants : register(b0) {
+    float4x4 WorldView;
+}
+
+cbuffer ModelConstants : register(b1) {
+    float4x4 ModelWorld;
+}
+
 
 Vout vertex(Vin input) {
     Vout output;
-    output.position = float4(input.position, 1.0);
-    output.ws_position = input.position;
-    output.colour = input.vertexId == 0 ? float4(1.0, 0.0, 0.0, 1.0) : input.vertexId == 1 ? float4(0.0, 1.0, 0.0, 1.0) : float4(0.0, 0.0, 1.0, 1.0);
-    output.normal = input.normal;
+
+    float4 pos = mul(ModelWorld, float4(input.position, 1.0));
+
+    output.position = mul(WorldView, pos);
+    output.ws_position = pos;
+    //output.colour = (input.vertexId % 3) == 0 ? float4(1.0, 0.0, 0.0, 1.0) : (input.vertexId % 3) == 1 ? float4(0.0, 1.0, 0.0, 1.0) : float4(0.0, 0.0, 1.0, 1.0);
+    output.colour = float4(0.5, 0.5, 0.5, 1.0);
+    output.normal = normalize(mul(float4(input.normal, 0.0), WorldView).xyz);
     output.uv = input.uv;
 
     return output;

@@ -171,10 +171,14 @@ impl RenderPass {
         Ok(())
     }
 
-    pub fn execute(&self, backend: &Backend, mesh: &GpuMesh) -> Result<()> {
+    pub fn execute(&self, backend: &Backend, mesh: &GpuMesh, clear_rtv: bool) -> Result<()> {
         debug_assert!(self.execution.is_some());
         if let Some(func) = &self.execution {
             self.bind(backend)?;
+
+            if clear_rtv {
+                self.clear(backend)?;
+            }
 
             func(self, backend, mesh)?;
             Ok(())
