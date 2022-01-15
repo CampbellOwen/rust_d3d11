@@ -8,11 +8,6 @@ use windows::{
 
 use super::backend::Backend;
 
-#[derive(Clone, Copy, Debug)]
-pub enum TextureType {
-    Texture2D,
-}
-
 #[derive(Clone, Copy)]
 pub struct TextureDescBuilder {
     size: [u32; 3],
@@ -150,6 +145,17 @@ impl From<D3D11_TEXTURE2D_DESC> for TextureDescBuilder {
 pub trait D3DTexture<'a>: IntoParam<'a, ID3D11Resource> + Clone {}
 impl<'a> D3DTexture<'a> for ID3D11Texture2D {}
 
+pub trait Tex<'a> {
+    type TextureType: D3DTexture<'a>;
+    type DescType: D3DTextureDesc;
+
+    fn device_texture(&self) -> Self::TextureType;
+    fn desc(&self) -> Self::DescType;
+    fn new(backend: &Backend, desc: Self::DescType) -> Result<Self>
+    where
+        Self: Sized;
+}
+
 pub struct Texture<'a, T, D>
 where
     T: D3DTexture<'a> + IntoParam<'a, ID3D11Resource>,
@@ -158,6 +164,30 @@ where
     pub texture: T,
     pub desc: D,
     pub phantom: PhantomData<&'a T>,
+}
+
+pub struct Tex2D {
+    pub texture: ID3D11Texture2D,
+    pub desc: D3D11_TEXTURE2D_DESC,
+}
+
+impl<'a> Tex<'a> for Tex2D {
+    type TextureType = ID3D11Texture2D;
+    type DescType = D3D11_TEXTURE2D_DESC;
+
+    fn device_texture(&self) -> ID3D11Texture2D {
+        self.texture.clone()
+    }
+
+    fn desc(&self) -> D3D11_TEXTURE2D_DESC {
+        self.desc
+    }
+
+    fn new(backend: &Backend, desc: D3D11_TEXTURE2D_DESC) -> Result<Tex2D> {
+        let texture = unsafe { backend.device.CreateTexture2D(&desc, std::ptr::null())? };
+
+        Ok(Tex2D { desc, texture })
+    }
 }
 
 pub type Texture2D<'a> = Texture<'a, ID3D11Texture2D, D3D11_TEXTURE2D_DESC>;

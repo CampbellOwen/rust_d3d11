@@ -1,15 +1,17 @@
-use std::marker::PhantomData;
-
 use windows::core::Result;
 use windows::Win32::Graphics::{Direct3D11::*, Dxgi::IDXGISwapChain};
 
-use super::texture::{D3DTexture, D3DTextureDesc, Texture, Texture2D};
+use super::texture::{Tex, Tex2D};
 
 pub struct Backend {
     pub device: ID3D11Device,
     pub device_context: ID3D11DeviceContext,
     pub swap_chain: IDXGISwapChain,
 }
+
+pub const FRAME_CONSTANTS: u32 = 0;
+pub const MATERIAL_CONSTANTS: u32 = 1;
+pub const OBJECT_CONSTANTS: u32 = 3;
 
 impl Backend {
     pub fn new(
@@ -24,21 +26,20 @@ impl Backend {
         }
     }
 
-    pub fn backbuffer(&self, buffer: u32) -> Result<Texture2D> {
+    pub fn backbuffer(&self, buffer: u32) -> Result<Tex2D> {
         let raw_backbuffer: ID3D11Texture2D = unsafe { self.swap_chain.GetBuffer(buffer)? };
         let mut backbuffer_desc = Default::default();
         unsafe { raw_backbuffer.GetDesc(&mut backbuffer_desc) }
 
-        Ok(Texture2D {
+        Ok(Tex2D {
             desc: backbuffer_desc,
             texture: raw_backbuffer,
-            phantom: PhantomData,
         })
     }
 
-    pub fn depth_stencil_view(
+    pub fn depth_stencil_view<'a>(
         &self,
-        texture: &Texture2D,
+        texture: &Tex2D,
         desc: Option<D3D11_DEPTH_STENCIL_VIEW_DESC>,
     ) -> Result<ID3D11DepthStencilView> {
         let desc = if let Some(desc) = desc {
@@ -49,15 +50,15 @@ impl Backend {
 
         let dsv = unsafe {
             self.device
-                .CreateDepthStencilView(texture.texture.clone(), desc)?
+                .CreateDepthStencilView(texture.device_texture(), desc)?
         };
 
         Ok(dsv)
     }
 
-    pub fn render_target_view(
+    pub fn render_target_view<'a>(
         &self,
-        texture: &Texture2D,
+        texture: &impl Tex<'a>,
         desc: Option<D3D11_RENDER_TARGET_VIEW_DESC>,
     ) -> Result<ID3D11RenderTargetView> {
         let desc = if let Some(desc) = desc {
@@ -68,19 +69,15 @@ impl Backend {
 
         unsafe {
             self.device
-                .CreateRenderTargetView(texture.texture.clone(), desc)
+                .CreateRenderTargetView(texture.device_texture(), desc)
         }
     }
 
-    pub fn shader_resource_view<'a, T, D>(
+    pub fn shader_resource_view<'a>(
         &self,
-        texture: &Texture<'a, T, D>,
+        texture: &impl Tex<'a>,
         desc: Option<D3D11_SHADER_RESOURCE_VIEW_DESC>,
-    ) -> Result<ID3D11ShaderResourceView>
-    where
-        T: D3DTexture<'a>,
-        D: D3DTextureDesc,
-    {
+    ) -> Result<ID3D11ShaderResourceView> {
         let desc = if let Some(desc) = desc {
             &desc
         } else {
@@ -89,7 +86,7 @@ impl Backend {
 
         unsafe {
             self.device
-                .CreateShaderResourceView(texture.texture.clone(), desc)
+                .CreateShaderResourceView(texture.device_texture(), desc)
         }
     }
 

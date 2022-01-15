@@ -5,7 +5,7 @@ use super::backend::Backend;
 use super::mesh::GpuMesh;
 use super::shader::Shader;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DepthAttachment {
     bind_depth_buffer: bool,
     depth_state: Option<ID3D11DepthStencilState>,
@@ -17,12 +17,13 @@ pub struct RenderPass {
     depth_attachment: DepthAttachment,
     input_desc: Option<ID3D11InputLayout>,
     pub vertex_stride: u32,
-    shader_resources: Vec<ID3D11ShaderResourceView>,
+    pub shader_resources: Vec<ID3D11ShaderResourceView>,
     render_targets: Vec<ID3D11RenderTargetView>,
     sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
     execution: Option<Box<dyn Fn(&Self, &Backend, &GpuMesh) -> Result<()>>>,
+    clear_rtv: bool,
 }
 
 impl RenderPass {
@@ -60,6 +61,12 @@ impl RenderPass {
 
     pub fn sampler_state(mut self, sample_state: ID3D11SamplerState) -> Self {
         self.sampler_states.push(sample_state);
+
+        self
+    }
+
+    pub fn clear_rtv(mut self, clear_rtv: bool) -> Self {
+        self.clear_rtv = clear_rtv;
 
         self
     }
@@ -171,17 +178,27 @@ impl RenderPass {
         Ok(())
     }
 
-    pub fn execute(&self, backend: &Backend, mesh: &GpuMesh, clear_rtv: bool) -> Result<()> {
+    pub fn execute(&self, backend: &Backend, meshes: &[GpuMesh]) -> Result<()> {
         debug_assert!(self.execution.is_some());
         if let Some(func) = &self.execution {
             self.bind(backend)?;
 
-            if clear_rtv {
+            if self.clear_rtv {
                 self.clear(backend)?;
             }
 
-            func(self, backend, mesh)?;
-            Ok(())
+            return meshes
+                .iter()
+                .map(|mesh| func(self, backend, mesh))
+                .fold(Ok(()), |ret, res| {
+                    if ret.is_err() {
+                        ret
+                    } else if res.is_err() {
+                        res
+                    } else {
+                        ret
+                    }
+                });
         } else {
             Err(Error::fast_error(windows::core::HRESULT::from_win32(
                 0x80004005,

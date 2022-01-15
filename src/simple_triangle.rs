@@ -10,7 +10,7 @@ use crate::render_backend::{
     mesh::*,
     render_pass::RenderPass,
     shader::Shader,
-    texture::{Texture2D, TextureDescBuilder},
+    texture::{Tex, Tex2D, TextureDescBuilder},
 };
 
 #[repr(C)]
@@ -29,11 +29,6 @@ pub struct SimpleTriangleScene {
     pub backend: Option<Backend>,
     pub meshes: Vec<GpuMesh>,
     pub depth_stencil_view: Option<ID3D11DepthStencilView>,
-    pub vertex_buffer: Option<GPUBuffer>,
-    pub index_buffer: Option<GPUBuffer>,
-    pub quad_vertex_buffer: Option<GPUBuffer>,
-    pub quad_index_buffer: Option<GPUBuffer>,
-    pub quad_mesh: Option<GpuMesh>,
     pub frame_constants: Option<GPUBuffer>,
     pub model_constants: Option<GPUBuffer>,
 }
@@ -111,41 +106,10 @@ impl SimpleTriangleScene {
         let cube = CpuMesh::from_obj("F:\\Models\\lost-empire\\lost_empire_triangulated.obj")
             .expect("Load obj");
 
-        let (gpu_meshes, vertex_buffer, index_buffer) =
-            GpuMesh::from_meshes(&backend, cube.as_slice()).expect("Uploading triangle mesh");
-
-        let quad_vertices = vec![
-            Vertex {
-                position: Vec3::new(-1.0, -1.0, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(0.0, 1.0),
-            },
-            Vertex {
-                position: Vec3::new(-1.0, 1.0, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(0.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(1.0, -1.0, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(1.0, 1.0),
-            },
-            Vertex {
-                position: Vec3::new(1.0, 1.0, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                uv: Vec2::new(1.0, 0.0),
-            },
-        ];
-
-        let quad_indices = vec![0, 1, 2, 2, 1, 3];
-
-        let quad_cpu_mesh = CpuMesh {
-            vertices: quad_vertices,
-            indices: quad_indices,
-        };
-
-        let (gpu_quad_mesh, quad_vertex_buffer, quad_index_buffer) =
-            GpuMesh::from_meshes(&backend, &[quad_cpu_mesh]).expect("Creating quad mesh");
+        let gpu_meshes = cube
+            .iter()
+            .map(|mesh| mesh.upload(&backend).expect("Uploading mesh"))
+            .collect();
 
         unsafe {
             backend
@@ -211,7 +175,7 @@ impl SimpleTriangleScene {
                 .expect("Create depth stencil state")
         };
 
-        let depth_texture = Texture2D::new(
+        let depth_texture = Tex2D::new(
             &backend,
             TextureDescBuilder::new()
                 .size([width as u32, height as u32, 0])
@@ -226,7 +190,7 @@ impl SimpleTriangleScene {
             .depth_stencil_view(&depth_texture, None)
             .expect("Create depth stencil view");
 
-        let position_texture = Texture2D::new(
+        let position_texture = Tex2D::new(
             &backend,
             TextureDescBuilder::new()
                 .size([width as u32, height as u32, 0])
@@ -243,7 +207,7 @@ impl SimpleTriangleScene {
             .shader_resource_view(&position_texture, None)
             .expect("Create position srv");
 
-        let albedo_texture = Texture2D::new(
+        let albedo_texture = Tex2D::new(
             &backend,
             TextureDescBuilder::new()
                 .size([width as u32, height as u32, 0])
@@ -260,7 +224,7 @@ impl SimpleTriangleScene {
             .shader_resource_view(&albedo_texture, None)
             .expect("Create albedo srv");
 
-        let normal_texture = Texture2D::new(
+        let normal_texture = Tex2D::new(
             &backend,
             TextureDescBuilder::new()
                 .size([width as u32, height as u32, 0])
@@ -305,6 +269,7 @@ impl SimpleTriangleScene {
             .render_target(position_rtv)
             .render_target(albedo_rtv)
             .render_target(normal_rtv)
+            .clear_rtv(true)
             .vertex_shader(
                 &backend,
                 Shader::vertex_shader(&backend, "gbuffer.hlsl", "vertex")
@@ -318,9 +283,25 @@ impl SimpleTriangleScene {
             )
             .execution(Box::new(move |_, backend, mesh: &GpuMesh| {
                 unsafe {
-                    backend
-                        .device_context
-                        .DrawIndexed(mesh.num_indices, mesh.index_offset, 0);
+                    backend.device_context.IASetIndexBuffer(
+                        mesh.index_buffer.buffer.clone(),
+                        DXGI_FORMAT_R32_UINT,
+                        0,
+                    );
+                }
+
+                unsafe {
+                    backend.device_context.IASetVertexBuffers(
+                        0,
+                        1,
+                        &Some(mesh.vertex_buffer.buffer.clone()),
+                        [std::mem::size_of::<Vertex>() as u32].as_ptr(),
+                        [0].as_ptr(),
+                    )
+                }
+
+                unsafe {
+                    backend.device_context.DrawIndexed(mesh.num_indices, 0, 0);
                 }
 
                 Ok(())
@@ -334,22 +315,21 @@ impl SimpleTriangleScene {
             .shader_resource(normal_srv)
             .sampler_state(sampler_state)
             .render_target(backbuffer_rtv)
+            .clear_rtv(true)
             .vertex_shader(
                 &backend,
                 Shader::vertex_shader(&backend, "vertex_shader.hlsl", "main")
                     .expect("Create vertex shader"),
-                &mesh_input_desc,
-                std::mem::size_of::<Vertex>() as u32,
+                &[],
+                0,
             )
             .pixel_shader(
                 Shader::pixel_shader(&backend, "fragment_shader.hlsl", "main")
                     .expect("Creating pixel shader"),
             )
-            .execution(Box::new(move |_, backend, mesh| {
+            .execution(Box::new(move |_, backend, _| {
                 unsafe {
-                    backend
-                        .device_context
-                        .DrawIndexed(mesh.num_indices, mesh.index_offset, 0);
+                    backend.device_context.Draw(6, 0);
                 }
 
                 Ok(())
@@ -396,11 +376,6 @@ impl SimpleTriangleScene {
             render_passes: vec![gbuffer_pass, gbuffer_combination_pass],
             backend: Some(backend),
             meshes: gpu_meshes,
-            vertex_buffer: Some(vertex_buffer),
-            index_buffer: Some(index_buffer),
-            quad_mesh: Some(gpu_quad_mesh[0]),
-            quad_vertex_buffer: Some(quad_vertex_buffer),
-            quad_index_buffer: Some(quad_index_buffer),
             frame_constants: Some(frame_constants),
             model_constants: Some(model_constants),
             depth_stencil_view: Some(depth_stencil_view),
@@ -412,24 +387,6 @@ impl SimpleTriangleScene {
             return;
         }
         let backend = self.backend.as_ref().unwrap();
-
-        unsafe {
-            backend.device_context.IASetIndexBuffer(
-                self.index_buffer.as_ref().unwrap().buffer.clone(),
-                DXGI_FORMAT_R32_UINT,
-                0,
-            );
-        }
-
-        unsafe {
-            backend.device_context.IASetVertexBuffers(
-                0,
-                1,
-                &Some(self.vertex_buffer.as_ref().unwrap().buffer.clone()),
-                [std::mem::size_of::<Vertex>() as u32].as_ptr(),
-                [0].as_ptr(),
-            )
-        }
 
         let model_constant = self.model_constants.as_ref().unwrap();
 
@@ -474,32 +431,12 @@ impl SimpleTriangleScene {
             );
         }
 
-        self.meshes.iter().enumerate().for_each(|(index, mesh)| {
-            self.render_passes[0]
-                .execute(backend, mesh, index == 0)
-                .expect("Execute gbuffer pass");
-        });
-
-        unsafe {
-            backend.device_context.IASetIndexBuffer(
-                self.quad_index_buffer.as_ref().unwrap().buffer.clone(),
-                DXGI_FORMAT_R32_UINT,
-                0,
-            );
-        }
-
-        unsafe {
-            backend.device_context.IASetVertexBuffers(
-                0,
-                1,
-                &Some(self.quad_vertex_buffer.as_ref().unwrap().buffer.clone()),
-                [std::mem::size_of::<Vertex>() as u32].as_ptr(),
-                [0].as_ptr(),
-            )
-        }
+        self.render_passes[0]
+            .execute(backend, &self.meshes)
+            .expect("Drawing to gbuffer");
 
         self.render_passes[1]
-            .execute(backend, &self.quad_mesh.as_ref().unwrap(), true)
+            .execute(backend, &self.meshes)
             .expect("Execute gbuffer combine pass");
 
         unsafe {

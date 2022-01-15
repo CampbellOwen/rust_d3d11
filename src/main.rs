@@ -1,5 +1,7 @@
 use std::time::SystemTime;
 
+use engine::Engine;
+use scene::create_minecraft_scene;
 use windows::Win32::Foundation::*;
 use winit::dpi::LogicalSize;
 use winit::event::VirtualKeyCode;
@@ -14,6 +16,10 @@ pub mod render_backend;
 mod simple_triangle;
 use simple_triangle::SimpleTriangleScene;
 
+mod camera;
+mod engine;
+mod object;
+mod scene;
 mod simple_gbuffer_pass;
 mod vertex_colour_stage;
 
@@ -32,11 +38,15 @@ fn main() {
 
     let hwnd = _window.hwnd();
 
-    let triangle_scene = SimpleTriangleScene::new(hwnd as HWND);
+    //let triangle_scene = SimpleTriangleScene::new(hwnd as HWND);
 
     let mut time = 0usize;
 
     let mut last_time = SystemTime::now();
+
+    let mut engine = Engine::new(hwnd as HWND)
+        .add_basic_renderer(800, 600)
+        .add_scene(&create_minecraft_scene);
 
     event_loop.run(move |event, _, control_flow| {
         // Pass every event to the WindowInputHelper.
@@ -54,7 +64,10 @@ fn main() {
                 return;
             }
 
-            triangle_scene.render(time, delta_time as usize);
+            engine.update();
+            engine.render(time, delta_time as usize);
+
+            //triangle_scene.render(time, delta_time as usize);
 
             //// query keypresses this update
             //if input.key_pressed(VirtualKeyCode::A) {

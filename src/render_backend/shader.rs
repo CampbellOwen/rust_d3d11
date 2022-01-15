@@ -30,6 +30,7 @@ fn compile_shader(path: &str, entry_point: &str, target: &str) -> Result<ID3DBlo
     shader_blob.ok_or_else(|| Error::fast_error(HRESULT::from_win32(0x80070057)))
 }
 
+#[derive(Clone)]
 pub enum Shader {
     Vertex(ID3D11VertexShader, ID3DBlob),
     Pixel(ID3D11PixelShader, ID3DBlob),
