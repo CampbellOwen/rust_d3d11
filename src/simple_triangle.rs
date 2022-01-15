@@ -280,32 +280,32 @@ impl SimpleTriangleScene {
             .pixel_shader(
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
-            )
-            .execution(Box::new(move |_, backend, mesh: &GpuMesh| {
-                unsafe {
-                    backend.device_context.IASetIndexBuffer(
-                        mesh.index_buffer.buffer.clone(),
-                        DXGI_FORMAT_R32_UINT,
-                        0,
-                    );
-                }
+            );
+        //.execution(Box::new(move |_, backend, mesh: &GpuMesh| {
+        //unsafe {
+        //backend.device_context.IASetIndexBuffer(
+        //mesh.index_buffer.buffer.clone(),
+        //DXGI_FORMAT_R32_UINT,
+        //0,
+        //);
+        //}
 
-                unsafe {
-                    backend.device_context.IASetVertexBuffers(
-                        0,
-                        1,
-                        &Some(mesh.vertex_buffer.buffer.clone()),
-                        [std::mem::size_of::<Vertex>() as u32].as_ptr(),
-                        [0].as_ptr(),
-                    )
-                }
+        //unsafe {
+        //backend.device_context.IASetVertexBuffers(
+        //0,
+        //1,
+        //&Some(mesh.vertex_buffer.buffer.clone()),
+        //[std::mem::size_of::<Vertex>() as u32].as_ptr(),
+        //[0].as_ptr(),
+        //)
+        //}
 
-                unsafe {
-                    backend.device_context.DrawIndexed(mesh.num_indices, 0, 0);
-                }
+        //unsafe {
+        //backend.device_context.DrawIndexed(mesh.num_indices, 0, 0);
+        //}
 
-                Ok(())
-            }));
+        //Ok(())
+        //}));
 
         let gbuffer_combination_pass = RenderPass::new()
             .enable_depth(true)
@@ -431,13 +431,13 @@ impl SimpleTriangleScene {
             );
         }
 
-        self.render_passes[0]
-            .execute(backend, &self.meshes)
-            .expect("Drawing to gbuffer");
+        //self.render_passes[0]
+        //    .execute(backend, &self.meshes)
+        //    .expect("Drawing to gbuffer");
 
-        self.render_passes[1]
-            .execute(backend, &self.meshes)
-            .expect("Execute gbuffer combine pass");
+        //self.render_passes[1]
+        //    .execute(backend, &self.meshes)
+        //    .expect("Execute gbuffer combine pass");
 
         unsafe {
             backend

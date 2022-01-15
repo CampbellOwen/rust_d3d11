@@ -11,7 +11,7 @@ pub struct Backend {
 
 pub const FRAME_CONSTANTS: u32 = 0;
 pub const MATERIAL_CONSTANTS: u32 = 1;
-pub const OBJECT_CONSTANTS: u32 = 3;
+pub const OBJECT_CONSTANTS: u32 = 2;
 
 impl Backend {
     pub fn new(

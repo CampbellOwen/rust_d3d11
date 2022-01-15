@@ -20,7 +20,7 @@ cbuffer FrameConstants : register(b0) {
     float4x4 WorldView;
 }
 
-cbuffer ModelConstants : register(b1) {
+cbuffer ModelConstants : register(b2) {
     float4x4 ModelWorld;
 }
 

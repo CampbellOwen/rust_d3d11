@@ -22,7 +22,7 @@ pub struct RenderPass {
     sampler_states: Vec<ID3D11SamplerState>,
     pixel_shader: Option<Shader>,
     vertex_shader: Option<Shader>,
-    execution: Option<Box<dyn Fn(&Self, &Backend, &GpuMesh) -> Result<()>>>,
+    execution: Option<Box<dyn Fn(&Self, &Backend, u32) -> Result<()>>>,
     clear_rtv: bool,
 }
 
@@ -111,7 +111,7 @@ impl RenderPass {
         self
     }
 
-    pub fn execution(mut self, func: Box<dyn Fn(&Self, &Backend, &GpuMesh) -> Result<()>>) -> Self {
+    pub fn execution(mut self, func: Box<dyn Fn(&Self, &Backend, u32) -> Result<()>>) -> Self {
         self.execution = Some(func);
 
         self
@@ -178,7 +178,7 @@ impl RenderPass {
         Ok(())
     }
 
-    pub fn execute(&self, backend: &Backend, meshes: &[GpuMesh]) -> Result<()> {
+    pub fn execute(&self, backend: &Backend, num_vertices: u32) -> Result<()> {
         debug_assert!(self.execution.is_some());
         if let Some(func) = &self.execution {
             self.bind(backend)?;
@@ -187,18 +187,7 @@ impl RenderPass {
                 self.clear(backend)?;
             }
 
-            return meshes
-                .iter()
-                .map(|mesh| func(self, backend, mesh))
-                .fold(Ok(()), |ret, res| {
-                    if ret.is_err() {
-                        ret
-                    } else if res.is_err() {
-                        res
-                    } else {
-                        ret
-                    }
-                });
+            return func(self, backend, num_vertices);
         } else {
             Err(Error::fast_error(windows::core::HRESULT::from_win32(
                 0x80004005,

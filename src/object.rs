@@ -1,10 +1,10 @@
 use glam::Mat4;
-use windows::Win32::Graphics::Direct3D11::*;
+use windows::Win32::Graphics::{Direct3D11::*, Dxgi::Common::DXGI_FORMAT_R32_UINT};
 
 use crate::render_backend::{
     backend::{Backend, OBJECT_CONSTANTS},
     gpu_buffer::GPUBuffer,
-    mesh::GpuMesh,
+    mesh::{GpuMesh, Vertex},
 };
 
 //trait Obj {
@@ -79,6 +79,16 @@ impl SimpleMesh {
 
 impl GameObject for SimpleMesh {
     fn update(&mut self) {}
+    fn flags(&self) -> Vec<Flag> {
+        self.flags.clone()
+    }
+    fn textures(&self) -> Vec<ID3D11Resource> {
+        self.textures.clone()
+    }
+
+    fn mesh(&self) -> Option<GpuMesh> {
+        Some(self.mesh.clone())
+    }
 
     fn bind(&mut self, backend: &Backend) {
         if self.transform_dirty {
@@ -101,6 +111,23 @@ impl GameObject for SimpleMesh {
                 1,
                 &Some(self.model_cbuffer.buffer.clone()),
             );
+        }
+        unsafe {
+            backend.device_context.IASetIndexBuffer(
+                self.mesh.index_buffer.buffer.clone(),
+                DXGI_FORMAT_R32_UINT,
+                0,
+            );
+        }
+
+        unsafe {
+            backend.device_context.IASetVertexBuffers(
+                0,
+                1,
+                &Some(self.mesh.vertex_buffer.buffer.clone()),
+                [std::mem::size_of::<Vertex>() as u32].as_ptr(),
+                [0].as_ptr(),
+            )
         }
     }
 }

@@ -224,27 +224,9 @@ impl BasicRenderer {
                 Shader::pixel_shader(&backend, "gbuffer.hlsl", "pixel")
                     .expect("Create pixel shader"),
             )
-            .execution(Box::new(move |_, backend, mesh: &GpuMesh| {
+            .execution(Box::new(move |_, backend, num_vertices: u32| {
                 unsafe {
-                    backend.device_context.IASetIndexBuffer(
-                        mesh.index_buffer.buffer.clone(),
-                        DXGI_FORMAT_R32_UINT,
-                        0,
-                    );
-                }
-
-                unsafe {
-                    backend.device_context.IASetVertexBuffers(
-                        0,
-                        1,
-                        &Some(mesh.vertex_buffer.buffer.clone()),
-                        [std::mem::size_of::<Vertex>() as u32].as_ptr(),
-                        [0].as_ptr(),
-                    )
-                }
-
-                unsafe {
-                    backend.device_context.DrawIndexed(mesh.num_indices, 0, 0);
+                    backend.device_context.DrawIndexed(num_vertices, 0, 0);
                 }
 
                 Ok(())
@@ -295,6 +277,8 @@ impl BasicRenderer {
 
 impl Renderer for BasicRenderer {
     fn render(&self, backend: &Backend, scene: &mut Scene, time: usize, delta_time: usize) {
+        scene.camera.bind(backend);
+
         let mut opaque_objects: Vec<_> = scene
             .objects
             .iter_mut()
@@ -302,8 +286,24 @@ impl Renderer for BasicRenderer {
             .collect();
 
         opaque_objects.iter_mut().for_each(|object| {
-            object.bind(backend);
-            self.gbuffer_write_pass.execute(backend, meshes)
+            if let Some(mesh) = object.mesh() {
+                object.bind(backend);
+
+                self.gbuffer_write_pass
+                    .execute(backend, mesh.num_indices)
+                    .expect("Execute gbuffer pass")
+            }
         });
+
+        self.combination_pass
+            .execute(backend, 6)
+            .expect("Combine gbuffer pass");
+
+        unsafe {
+            backend
+                .swap_chain
+                .Present(1, 0)
+                .expect("Presenting swapchain");
+        }
     }
 }
