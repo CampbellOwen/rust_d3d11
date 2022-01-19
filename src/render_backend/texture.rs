@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use image::io::Reader as ImageReader;
+
 use windows::{
     core::*,
     Win32::Graphics::Direct3D11::*,
@@ -145,25 +147,14 @@ impl From<D3D11_TEXTURE2D_DESC> for TextureDescBuilder {
 pub trait D3DTexture<'a>: IntoParam<'a, ID3D11Resource> + Clone {}
 impl<'a> D3DTexture<'a> for ID3D11Texture2D {}
 
-pub trait Tex<'a> {
+pub trait Tex<'a>: Sized {
     type TextureType: D3DTexture<'a>;
     type DescType: D3DTextureDesc;
 
     fn device_texture(&self) -> Self::TextureType;
     fn desc(&self) -> Self::DescType;
-    fn new(backend: &Backend, desc: Self::DescType) -> Result<Self>
-    where
-        Self: Sized;
-}
-
-pub struct Texture<'a, T, D>
-where
-    T: D3DTexture<'a> + IntoParam<'a, ID3D11Resource>,
-    D: D3DTextureDesc,
-{
-    pub texture: T,
-    pub desc: D,
-    pub phantom: PhantomData<&'a T>,
+    fn new(backend: &Backend, desc: Self::DescType) -> Result<Self>;
+    fn from_file(backend: &Backend, file: &str) -> Result<Self>;
 }
 
 pub struct Tex2D {
@@ -188,18 +179,59 @@ impl<'a> Tex<'a> for Tex2D {
 
         Ok(Tex2D { desc, texture })
     }
-}
 
-pub type Texture2D<'a> = Texture<'a, ID3D11Texture2D, D3D11_TEXTURE2D_DESC>;
+    fn from_file(backend: &Backend, file: &str) -> Result<Self> {
+        let img = ImageReader::open(file)
+            .map_err(|_| Error::fast_error(HRESULT::from_win32(0x80070057)))?
+            .decode()
+            .map_err(|_| HRESULT::from_win32(0x80070057))?;
 
-impl<'a> Texture2D<'a> {
-    pub fn new(backend: &Backend, desc: D3D11_TEXTURE2D_DESC) -> Result<Texture2D> {
-        let texture = unsafe { backend.device.CreateTexture2D(&desc, std::ptr::null())? };
+        let img = img.to_rgba8();
 
-        Ok(Texture {
-            desc,
-            texture,
-            phantom: PhantomData,
-        })
+        let mut samples = img.into_flat_samples();
+        let (_, w, h) = samples.extents();
+        let (_, width_stride, height_stride) = samples.strides_cwh();
+
+        let desc = TextureDescBuilder::new()
+            .size([w as u32, h as u32, 0])
+            .mip_levels(0)
+            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET)
+            .misc_flags(D3D11_RESOURCE_MISC_GENERATE_MIPS)
+            .cpu_access_flags(D3D11_CPU_ACCESS_WRITE)
+            .format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .build_texture2d();
+
+        let subresource_data = D3D11_SUBRESOURCE_DATA {
+            pSysMem: samples.samples.as_mut_ptr() as _,
+            SysMemPitch: (width_stride * w) as u32,
+            SysMemSlicePitch: (width_stride * w * h) as u32,
+        };
+
+        let texture = unsafe {
+            backend
+                .device
+                .CreateTexture2D(&desc, std::ptr::null_mut())?
+        };
+
+        unsafe {
+            backend.device_context.UpdateSubresource(
+                texture.clone(),
+                0,
+                std::ptr::null(),
+                samples.samples.as_mut_ptr() as _,
+                height_stride as u32,
+                (height_stride * h) as u32,
+            );
+        }
+
+        let tex = Tex2D { desc, texture };
+
+        let srv = backend.shader_resource_view(&tex, None)?;
+
+        unsafe {
+            backend.device_context.GenerateMips(&srv);
+        }
+
+        Ok(tex)
     }
 }

@@ -1,10 +1,11 @@
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use windows::Win32::Graphics::{Direct3D11::*, Dxgi::Common::DXGI_FORMAT_R32_UINT};
 
 use crate::render_backend::{
     backend::{Backend, OBJECT_CONSTANTS},
     gpu_buffer::GPUBuffer,
     mesh::{GpuMesh, Vertex},
+    texture::Tex2D,
 };
 
 //trait Obj {
@@ -40,8 +41,8 @@ pub trait GameObject {
         None
     }
 
-    fn textures(&self) -> Vec<ID3D11Resource> {
-        vec![]
+    fn textures(&self) -> &[ID3D11ShaderResourceView] {
+        &[]
     }
 
     fn mesh(&self) -> Option<GpuMesh> {
@@ -54,20 +55,19 @@ pub trait GameObject {
 }
 
 pub struct SimpleMesh {
-    mesh: GpuMesh,
-    transform: Mat4,
-    model_cbuffer: GPUBuffer,
+    pub mesh: GpuMesh,
+    pub transform: Mat4,
+    pub model_cbuffer: GPUBuffer,
     transform_dirty: bool,
-
-    textures: Vec<ID3D11Resource>,
-    flags: Vec<Flag>,
+    pub textures: Vec<ID3D11ShaderResourceView>,
+    pub flags: Vec<Flag>,
 }
 
 impl SimpleMesh {
     pub fn new(backend: &Backend, mesh: GpuMesh) -> SimpleMesh {
         SimpleMesh {
             mesh,
-            transform: Mat4::IDENTITY,
+            transform: Mat4::from_translation(Vec3::new(0.0, 10.0, 0.0)),
             transform_dirty: true,
             model_cbuffer: GPUBuffer::constant_buffer(backend, std::mem::size_of::<Mat4>() as u32)
                 .expect("Creating constant buffer"),
@@ -78,12 +78,15 @@ impl SimpleMesh {
 }
 
 impl GameObject for SimpleMesh {
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.transform *= Mat4::from_translation(Vec3::new(0.0, 0.0, -0.01));
+        self.transform_dirty = true;
+    }
     fn flags(&self) -> Vec<Flag> {
         self.flags.clone()
     }
-    fn textures(&self) -> Vec<ID3D11Resource> {
-        self.textures.clone()
+    fn textures(&self) -> &[ID3D11ShaderResourceView] {
+        self.textures.as_slice()
     }
 
     fn mesh(&self) -> Option<GpuMesh> {
@@ -117,6 +120,14 @@ impl GameObject for SimpleMesh {
                 self.mesh.index_buffer.buffer.clone(),
                 DXGI_FORMAT_R32_UINT,
                 0,
+            );
+        }
+
+        unsafe {
+            backend.device_context.PSSetShaderResources(
+                0,
+                self.textures.len() as u32,
+                self.textures.as_ptr() as _,
             );
         }
 

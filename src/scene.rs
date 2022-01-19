@@ -4,6 +4,7 @@ use crate::camera::Camera;
 use crate::object::{Flag, GameObject, SimpleMesh};
 use crate::render_backend::backend::Backend;
 use crate::render_backend::mesh::CpuMesh;
+use crate::render_backend::texture::Tex2D;
 use crate::render_backend::{render_pass::RenderPass, texture::Tex};
 
 pub struct Scene {
@@ -22,9 +23,18 @@ pub fn create_minecraft_scene(backend: &Backend) -> Scene {
     let world = &CpuMesh::from_obj("F:\\Models\\lost-empire\\lost_empire_triangulated.obj")
         .expect("Load obj")[0];
 
+    let albedo = Tex2D::from_file(backend, "F:\\Models\\lost-empire\\lost_empire-RGB.png")
+        .expect("Load albedo texture");
+
+    let albedo_srv = backend
+        .shader_resource_view(&albedo, None)
+        .expect("albedo SRV");
+
     let uploaded_world = world.upload(backend).expect("Upload mesh");
 
-    let world_object = SimpleMesh::new(backend, uploaded_world);
+    let mut world_object = SimpleMesh::new(backend, uploaded_world);
+
+    world_object.textures.push(albedo_srv);
 
     Scene {
         materials: HashMap::new(),

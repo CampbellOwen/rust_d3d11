@@ -212,6 +212,7 @@ impl BasicRenderer {
             .render_target(position_rtv.clone())
             .render_target(albedo_rtv.clone())
             .render_target(normal_rtv.clone())
+            .sampler_state(sampler_state.clone())
             .clear_rtv(true)
             .vertex_shader(
                 &backend,
@@ -287,6 +288,7 @@ impl Renderer for BasicRenderer {
 
         opaque_objects.iter_mut().for_each(|object| {
             if let Some(mesh) = object.mesh() {
+                backend.unbind_shader_resources();
                 object.bind(backend);
 
                 self.gbuffer_write_pass
