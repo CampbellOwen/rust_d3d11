@@ -15,6 +15,7 @@ use super::{
     render_pass::RenderPass,
     texture::{Tex, Tex2D, TextureDescBuilder},
 };
+use crate::atmosphere::precompute::{precompute_textures, AtmosphericConstants};
 
 pub trait Renderer {
     fn render(&self, backend: &Backend, scene: &mut Scene, time: usize, delta_time: usize);
@@ -260,6 +261,9 @@ impl BasicRenderer {
 
                 Ok(())
             }));
+
+        let consts = AtmosphericConstants::default();
+        let t = precompute_textures(backend, consts);
 
         BasicRenderer {
             depth_stencil_view,

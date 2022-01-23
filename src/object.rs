@@ -67,7 +67,7 @@ impl SimpleMesh {
     pub fn new(backend: &Backend, mesh: GpuMesh) -> SimpleMesh {
         SimpleMesh {
             mesh,
-            transform: Mat4::from_translation(Vec3::new(0.0, 10.0, 0.0)),
+            transform: Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0)),
             transform_dirty: true,
             model_cbuffer: GPUBuffer::constant_buffer(backend, std::mem::size_of::<Mat4>() as u32)
                 .expect("Creating constant buffer"),
@@ -79,8 +79,8 @@ impl SimpleMesh {
 
 impl GameObject for SimpleMesh {
     fn update(&mut self) {
-        self.transform *= Mat4::from_translation(Vec3::new(0.0, 0.0, -0.01));
-        self.transform_dirty = true;
+        //self.transform *= Mat4::from_translation(Vec3::new(0.0, -0.01, -0.09));
+        //self.transform_dirty = true;
     }
     fn flags(&self) -> Vec<Flag> {
         self.flags.clone()

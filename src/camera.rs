@@ -10,8 +10,8 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(backend: &Backend) -> Camera {
-        let camera_pos = Vec3::new(0.0, 40.0, -70.0);
-        let focal_point = Vec3::new(0.0, 20.0, 20.0);
+        let camera_pos = Vec3::new(0.0, 0.5, -1.0);
+        let focal_point = Vec3::new(0.0, 0.0, 0.2);
 
         let view_dir = focal_point - camera_pos;
 

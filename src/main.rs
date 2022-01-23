@@ -11,6 +11,7 @@ use winit_input_helper::WinitInputHelper;
 
 use winit::platform::windows::WindowExtWindows;
 
+pub mod atmosphere;
 pub mod render_backend;
 
 mod simple_triangle;
@@ -28,8 +29,8 @@ fn main() {
 
     let event_loop = EventLoop::new();
 
-    let width = 800.;
-    let height = 600.;
+    let width = 1920.;
+    let height = 1080.;
     let _window = WindowBuilder::new()
         .with_title("D3D11")
         .with_inner_size(LogicalSize::new(width, height))
@@ -45,7 +46,7 @@ fn main() {
     let mut last_time = SystemTime::now();
 
     let mut engine = Engine::new(hwnd as HWND)
-        .add_basic_renderer(800, 600)
+        .add_basic_renderer(1920, 1080)
         .add_scene(&create_minecraft_scene);
 
     event_loop.run(move |event, _, control_flow| {

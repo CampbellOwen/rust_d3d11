@@ -34,6 +34,7 @@ fn compile_shader(path: &str, entry_point: &str, target: &str) -> Result<ID3DBlo
 pub enum Shader {
     Vertex(ID3D11VertexShader, ID3DBlob),
     Pixel(ID3D11PixelShader, ID3DBlob),
+    Compute(ID3D11ComputeShader, ID3DBlob),
 }
 
 impl Shader {
@@ -63,5 +64,19 @@ impl Shader {
         };
 
         Ok(Shader::Vertex(shader, shader_blob))
+    }
+
+    pub fn compute_shader(backend: &Backend, path: &str, entry_point: &str) -> Result<Shader> {
+        let shader_blob = compile_shader(path, entry_point, "cs_5_0")?;
+
+        let shader = unsafe {
+            backend.device.CreateComputeShader(
+                shader_blob.GetBufferPointer(),
+                shader_blob.GetBufferSize(),
+                None,
+            )?
+        };
+
+        Ok(Shader::Compute(shader, shader_blob))
     }
 }

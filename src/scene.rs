@@ -20,10 +20,16 @@ impl Scene {
 }
 
 pub fn create_minecraft_scene(backend: &Backend) -> Scene {
-    let world = &CpuMesh::from_obj("F:\\Models\\lost-empire\\lost_empire_triangulated.obj")
+    //let world = &CpuMesh::from_obj("F:\\Models\\lost-empire\\lost_empire_triangulated.obj")
+    //    .expect("Load obj")[0];
+
+    //let albedo = Tex2D::from_file(backend, "F:\\Models\\lost-empire\\lost_empire-RGB.png")
+    //    .expect("Load albedo texture");
+
+    let world = &CpuMesh::from_obj("F:\\Models\\vokselia_spawn\\vokselia_spawn_triangulated.obj")
         .expect("Load obj")[0];
 
-    let albedo = Tex2D::from_file(backend, "F:\\Models\\lost-empire\\lost_empire-RGB.png")
+    let albedo = Tex2D::from_file(backend, "F:\\Models\\vokselia_spawn\\vokselia_spawn.png")
         .expect("Load albedo texture");
 
     let albedo_srv = backend

@@ -61,6 +61,33 @@ impl<'a, 'b> GPUBuffer {
         )
     }
 
+    pub fn structured_buffer<T: Sized>(
+        backend: &Backend,
+        num_elements: u32,
+        gpu_write: bool,
+    ) -> Result<GPUBuffer> {
+        Self::new(
+            backend,
+            D3D11_BUFFER_DESC {
+                ByteWidth: std::mem::size_of::<T>() as u32 * num_elements,
+                Usage: if gpu_write {
+                    Default::default()
+                } else {
+                    D3D11_USAGE_DYNAMIC
+                },
+                CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
+                BindFlags: if gpu_write {
+                    D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE
+                } else {
+                    D3D11_BIND_SHADER_RESOURCE
+                },
+                MiscFlags: D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+                StructureByteStride: std::mem::size_of::<T>() as u32,
+                ..Default::default()
+            },
+        )
+    }
+
     pub fn map(&'a self, backend: &'b Backend) -> Result<MappedGPUBuffer<'a, 'b>> {
         let mapped = unsafe {
             backend

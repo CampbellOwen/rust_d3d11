@@ -90,6 +90,23 @@ impl Backend {
         }
     }
 
+    pub fn unordered_access_view<'a>(
+        &self,
+        texture: &impl Tex<'a>,
+        desc: Option<D3D11_UNORDERED_ACCESS_VIEW_DESC>,
+    ) -> Result<ID3D11UnorderedAccessView> {
+        let desc = if let Some(desc) = desc {
+            &desc
+        } else {
+            std::ptr::null()
+        };
+
+        unsafe {
+            self.device
+                .CreateUnorderedAccessView(texture.device_texture(), desc)
+        }
+    }
+
     pub fn set_render_targets(
         &self,
         render_targets: &[ID3D11RenderTargetView],
@@ -162,6 +179,8 @@ impl Backend {
                 .PSSetShaderResources(0, num, srvs.as_ptr());
             self.device_context
                 .VSSetShaderResources(0, num, srvs.as_ptr());
+            self.device_context
+                .CSSetShaderResources(0, num, srvs.as_ptr());
         }
     }
 
