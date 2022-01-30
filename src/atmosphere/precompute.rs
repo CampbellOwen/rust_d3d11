@@ -44,94 +44,26 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         mapped.copy_from(&[constants]);
     }
 
-    let transmittance_texture = Tex2D::new(
-        backend,
-        TextureDescBuilder::new()
-            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
-            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-            .mip_levels(1)
-            .size([256, 64, 0])
-            .build_texture2d(),
-    )
-    .expect("Create transmittance texture");
-    let transmittance_uav = backend
-        .unordered_access_view(&transmittance_texture, None)
-        .expect("Create UAV");
-    let transmittance_srv = backend
-        .shader_resource_view(&transmittance_texture, None)
-        .expect("SRV for transmittance");
+    let transmittance_buffer = GPUBuffer::structured_buffer::<Vec3>(backend, 256 * 64, true)
+        .expect("Create transmittance buffer");
 
-    let irradiance_texture = Tex2D::new(
-        backend,
-        TextureDescBuilder::new()
-            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
-            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-            .mip_levels(1)
-            .size([64, 16, 0])
-            .build_texture2d(),
-    )
-    .expect("Create irradiance texture");
+    let transmittance_uav = backend
+        .unordered_access_view_buffer(&transmittance_buffer, None)
+        .expect("Create UAV");
+
+    let irradiance_buffer = GPUBuffer::structured_buffer::<Vec3>(backend, 64 * 16, true)
+        .expect("Create irradiance buffer");
 
     let irradiance_uav = backend
-        .unordered_access_view(&irradiance_texture, None)
+        .unordered_access_view_buffer(&irradiance_buffer, None)
         .expect("irradiance uav");
-    let irradiance_srv = backend
-        .shader_resource_view(&irradiance_texture, None)
-        .expect("Irradiance srv");
 
-    let delta_irradiance_texture = Tex2D::new(
-        backend,
-        TextureDescBuilder::new()
-            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
-            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-            .mip_levels(1)
-            .size([64, 16, 0])
-            .build_texture2d(),
-    )
-    .expect("Create delta_irradiance texture");
+    let delta_irradiance_buffer = GPUBuffer::structured_buffer::<Vec3>(backend, 64 * 16, true)
+        .expect("Create delta_irradiance buffer");
 
     let delta_irradiance_uav = backend
-        .unordered_access_view(&delta_irradiance_texture, None)
+        .unordered_access_view_buffer(&delta_irradiance_buffer, None)
         .expect("delta_irradiance uav");
-    let delta_irradiance_srv = backend
-        .shader_resource_view(&delta_irradiance_texture, None)
-        .expect("delta_Irradiance srv");
-
-    let inscatter_texture = Tex2D::new(
-        backend,
-        TextureDescBuilder::new()
-            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
-            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-            .mip_levels(1)
-            .size([64, 16, 0])
-            .build_texture2d(),
-    )
-    .expect("Create inscatter texture");
-
-    let inscatter_uav = backend
-        .unordered_access_view(&inscatter_texture, None)
-        .expect("inscatter uav");
-    let inscatter_srv = backend
-        .shader_resource_view(&inscatter_texture, None)
-        .expect("inscatter srv");
-
-    let delta_inscatter_texture = Tex2D::new(
-        backend,
-        TextureDescBuilder::new()
-            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
-            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-            .mip_levels(1)
-            .size([64, 16, 0])
-            .build_texture2d(),
-    )
-    .expect("Create delta_inscatter texture");
-
-    let delta_inscatter_uav = backend
-        .unordered_access_view(&delta_inscatter_texture, None)
-        .expect("delta_inscatter uav");
-    let delta_inscatter_srv = backend
-        .shader_resource_view(&delta_inscatter_texture, None)
-        .expect("delta_inscatter srv");
 
     let transmittance_shader =
         Shader::compute_shader(backend, "atmospheric_precompute_transmittance.hlsl", "main")
@@ -186,12 +118,6 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
                 .device_context
                 .CSSetShader(shader.clone(), std::ptr::null(), 0);
 
-            backend.device_context.CSSetShaderResources(
-                0,
-                1,
-                [Some(transmittance_srv.clone())].as_ptr(),
-            );
-
             backend
                 .device_context
                 .CSSetConstantBuffers(0, 1, &Some(cbuffer.buffer.clone()));
@@ -199,7 +125,11 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
             backend.device_context.CSSetUnorderedAccessViews(
                 0,
                 1,
-                &Some(delta_irradiance_uav),
+                [
+                    Some(transmittance_uav.clone()),
+                    Some(delta_irradiance_uav.clone()),
+                ]
+                .as_ptr(),
                 std::ptr::null(),
             );
 
@@ -217,5 +147,16 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         }
     }
 
-    transmittance_texture.device_texture()
+    let irradiance_texture = Tex2D::new(
+        backend,
+        TextureDescBuilder::new()
+            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
+            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+            .mip_levels(1)
+            .size([64, 16, 0])
+            .build_texture2d(),
+    )
+    .expect("Create irradiance texture");
+
+    irradiance_texture.device_texture()
 }

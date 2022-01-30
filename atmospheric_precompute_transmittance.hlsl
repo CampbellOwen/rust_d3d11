@@ -10,7 +10,7 @@ cbuffer AtmosphericConstants : register(b0) {
     uint num_scattering;
 };
 
-RWTexture2D<float4> Transmittance : register(u0);
+RWStructuredBuffer<float3> Transmittance : register(u0);
 
 float DistanceToAtmosTop(float r, float mu) {
     return (-r * mu) + max(sqrt(r * r * (mu * mu - 1.0) + atmos_top * atmos_top), 0.0);
@@ -108,5 +108,7 @@ void main (uint3 DTid: SV_DispatchThreadId) {
     bool intersects_ground = ViewIntersectsGround(r, mu);
     float3 t = ComputeTransmittanceToAtmosTop(r, mu);
 
-    Transmittance[DTid.xy] = float4(t.xyz, dist_to_top);
+
+    uint index = (DTid.y * 256) + DTid.x;
+    Transmittance[index] = t.xyz;
 }
