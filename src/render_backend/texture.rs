@@ -111,6 +111,7 @@ impl Default for TextureDescBuilder {
 pub trait D3DTextureDesc {}
 
 impl D3DTextureDesc for D3D11_TEXTURE2D_DESC {}
+impl D3DTextureDesc for D3D11_TEXTURE3D_DESC {}
 
 impl From<DXGI_SWAP_CHAIN_DESC> for TextureDescBuilder {
     fn from(desc: DXGI_SWAP_CHAIN_DESC) -> Self {
@@ -146,6 +147,7 @@ impl From<D3D11_TEXTURE2D_DESC> for TextureDescBuilder {
 
 pub trait D3DTexture<'a>: IntoParam<'a, ID3D11Resource> + Clone {}
 impl<'a> D3DTexture<'a> for ID3D11Texture2D {}
+impl<'a> D3DTexture<'a> for ID3D11Texture3D {}
 
 pub trait Tex<'a>: Sized {
     type TextureType: D3DTexture<'a>;
@@ -155,6 +157,35 @@ pub trait Tex<'a>: Sized {
     fn desc(&self) -> Self::DescType;
     fn new(backend: &Backend, desc: Self::DescType) -> Result<Self>;
     fn from_file(backend: &Backend, file: &str) -> Result<Self>;
+}
+
+pub struct Tex3D {
+    pub texture: ID3D11Texture3D,
+    pub desc: D3D11_TEXTURE3D_DESC,
+}
+
+impl<'a> Tex<'a> for Tex3D {
+    type TextureType = ID3D11Texture3D;
+
+    type DescType = D3D11_TEXTURE3D_DESC;
+
+    fn device_texture(&self) -> Self::TextureType {
+        self.texture.clone()
+    }
+
+    fn desc(&self) -> Self::DescType {
+        self.desc
+    }
+
+    fn new(backend: &Backend, desc: Self::DescType) -> Result<Self> {
+        let texture = unsafe { backend.device.CreateTexture3D(&desc, std::ptr::null())? };
+
+        Ok(Tex3D { desc, texture })
+    }
+
+    fn from_file(backend: &Backend, file: &str) -> Result<Self> {
+        todo!()
+    }
 }
 
 pub struct Tex2D {
@@ -200,12 +231,6 @@ impl<'a> Tex<'a> for Tex2D {
             .cpu_access_flags(D3D11_CPU_ACCESS_WRITE)
             .format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
             .build_texture2d();
-
-        let subresource_data = D3D11_SUBRESOURCE_DATA {
-            pSysMem: samples.samples.as_mut_ptr() as _,
-            SysMemPitch: (width_stride * w) as u32,
-            SysMemSlicePitch: (width_stride * w * h) as u32,
-        };
 
         let texture = unsafe {
             backend

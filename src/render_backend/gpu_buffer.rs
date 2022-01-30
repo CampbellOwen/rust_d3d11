@@ -49,6 +49,12 @@ impl<'a, 'b> GPUBuffer {
     }
 
     pub fn constant_buffer(backend: &Backend, size_bytes: u32) -> Result<GPUBuffer> {
+        let size_bytes = if size_bytes % 16 != 0 {
+            16 * ((size_bytes / 16) + 1)
+        } else {
+            size_bytes
+        };
+
         Self::new(
             backend,
             D3D11_BUFFER_DESC {

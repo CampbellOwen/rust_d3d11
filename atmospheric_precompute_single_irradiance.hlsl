@@ -1,4 +1,3 @@
-
 #define TRANSMITTANCE_INTEGRAL_SAMPLES 1000
 
 struct AtmosphericConstants {
@@ -59,6 +58,18 @@ float DensityAlongView(float scale_height, float r, float mu) {
 
 }
 
+float3 ComputeTransmittanceToAtmosTop(float r, float mu) {
+    float distance_to_top = DistanceToAtmosTop(r, mu);
+
+    float3 beta_mie_e = BetaMieExtinction(r, mu);
+
+    float3 integral_result = (Constants[0].beta_rayleigh * DensityAlongView(Constants[0].Hr, r, mu)) + (beta_mie_e * DensityAlongView(Constants[0].Hm, r, mu));
+
+
+    return exp(-integral_result);
+}
+
+
 float2 RMuFromUV(float2 uv) {
     float mu = uv.x;
     float r = uv.y;
@@ -76,6 +87,11 @@ float2 RMuFromUV(float2 uv) {
     mu = d == 0.0 ? 1.0 : (distance_to_top_for_horizontal * distance_to_top_for_horizontal - rho * rho - d*d) / (2.0 * r * d);
 
     mu = clamp(mu, -1.0, 1.0);
+
+
+
+    //r = Constants[0].atmos_bottom + (r*r) * (Constants[0].atmos_top - Constants[0].atmos_bottom);
+    //mu = -0.15 + tan(1.5 * mu) / tan(1.5) * (1.0 + 0.15);
 
     return float2(r, mu);
 }

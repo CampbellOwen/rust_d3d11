@@ -18,13 +18,11 @@ float4 main(float4 position : SV_POSITION, float2 uv: TEXCOORD) : SV_TARGET {
     float3 p = pos.Sample(Sampler, uv).xyz;
     float4 c = albedo.Sample(Sampler, uv);
 
-    float3 dir_light = normalize(float3(0.0, 50.0, -10.0));
+    float3 dir_light = normalize(float3(1.0, 10.0, 0.0));
 
 
     float angle = clamp(dot(dir_light, n.xyz), 0.0, 1.0);
 
 
-    return (c * angle);
-    //return c;
-
+    return (c * angle) + float4(0.1, 0.1, 0.1, 0.0);
 }

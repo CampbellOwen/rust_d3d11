@@ -1,6 +1,7 @@
 use windows::core::Result;
 use windows::Win32::Graphics::{Direct3D11::*, Dxgi::IDXGISwapChain};
 
+use super::gpu_buffer::GPUBuffer;
 use super::texture::{Tex, Tex2D};
 
 pub struct Backend {
@@ -87,6 +88,23 @@ impl Backend {
         unsafe {
             self.device
                 .CreateShaderResourceView(texture.device_texture(), desc)
+        }
+    }
+
+    pub fn unordered_access_view_buffer(
+        &self,
+        buffer: &GPUBuffer,
+        desc: Option<D3D11_UNORDERED_ACCESS_VIEW_DESC>,
+    ) -> Result<ID3D11UnorderedAccessView> {
+        let desc = if let Some(desc) = desc {
+            &desc
+        } else {
+            std::ptr::null()
+        };
+
+        unsafe {
+            self.device
+                .CreateUnorderedAccessView(buffer.buffer.clone(), desc)
         }
     }
 
