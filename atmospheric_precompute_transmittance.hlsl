@@ -13,11 +13,11 @@ cbuffer AtmosphericConstants : register(b0) {
 RWStructuredBuffer<float3> Transmittance : register(u0);
 
 float DistanceToAtmosTop(float r, float mu) {
-    return (-r * mu) + max(sqrt(r * r * (mu * mu - 1.0) + atmos_top * atmos_top), 0.0);
+    return (-r * mu) + sqrt(max(r * r * (mu * mu - 1.0) + atmos_top * atmos_top, 0.0));
 }
 
 float DistanceToAtmosBottom(float r, float mu) {
-    return (-r * mu) - max(sqrt(r * r * (mu * mu - 1.0) + atmos_bottom * atmos_bottom), 0.0);
+    return (-r * mu) - sqrt(max(r * r * (mu * mu - 1.0) + atmos_bottom * atmos_bottom, 0.0));
 }
 
 bool ViewIntersectsGround(float r, float mu) {

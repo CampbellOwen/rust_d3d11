@@ -91,6 +91,23 @@ impl Backend {
         }
     }
 
+    pub fn shader_resource_view_buffer(
+        &self,
+        buffer: &GPUBuffer,
+        desc: Option<D3D11_SHADER_RESOURCE_VIEW_DESC>,
+    ) -> Result<ID3D11ShaderResourceView> {
+        let desc = if let Some(desc) = desc {
+            &desc
+        } else {
+            std::ptr::null()
+        };
+
+        unsafe {
+            self.device
+                .CreateShaderResourceView(buffer.buffer.clone(), desc)
+        }
+    }
+
     pub fn unordered_access_view_buffer(
         &self,
         buffer: &GPUBuffer,

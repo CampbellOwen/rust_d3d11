@@ -2,14 +2,17 @@ use windows::core::*;
 use windows::Win32::Graphics::Direct3D::{Fxc::*, ID3DBlob};
 use windows::Win32::Graphics::Direct3D11::*;
 
+use std::ffi::CStr;
+
 use super::backend::Backend;
 
 fn compile_shader(path: &str, entry_point: &str, target: &str) -> Result<ID3DBlob> {
-    let flags = if cfg!(debug_assertions) {
-        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
-    } else {
-        0
-    };
+    let flags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+    //let flags = if cfg!(debug_assertions) {
+    //    D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
+    //} else {
+    //    0
+    //};
 
     let mut shader_blob = None;
 

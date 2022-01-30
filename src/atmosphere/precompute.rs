@@ -7,6 +7,8 @@ use windows::Win32::Graphics::{
 
 use crate::render_backend::{backend::Backend, gpu_buffer::GPUBuffer, shader::*, texture::*};
 
+use std::ffi::{CStr, CString};
+
 pub struct AtmosphericConstants {
     atmos_bottom: f32,
     atmos_top: f32,
@@ -31,7 +33,7 @@ impl Default for AtmosphericConstants {
     }
 }
 
-pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -> ID3D11Texture2D {
+pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -> (Tex2D, Tex2D) {
     let cbuffer =
         GPUBuffer::constant_buffer(backend, std::mem::size_of::<AtmosphericConstants>() as u32)
             .expect("Create cbuffer");
@@ -51,6 +53,10 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         .unordered_access_view_buffer(&transmittance_buffer, None)
         .expect("Create UAV");
 
+    let transmittance_srv = backend
+        .shader_resource_view_buffer(&transmittance_buffer, None)
+        .expect("Create srv");
+
     let irradiance_buffer = GPUBuffer::structured_buffer::<Vec3>(backend, 64 * 16, true)
         .expect("Create irradiance buffer");
 
@@ -58,12 +64,20 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         .unordered_access_view_buffer(&irradiance_buffer, None)
         .expect("irradiance uav");
 
+    let irradiance_srv = backend
+        .shader_resource_view_buffer(&irradiance_buffer, None)
+        .expect("irradiance srv");
+
     let delta_irradiance_buffer = GPUBuffer::structured_buffer::<Vec3>(backend, 64 * 16, true)
         .expect("Create delta_irradiance buffer");
 
     let delta_irradiance_uav = backend
         .unordered_access_view_buffer(&delta_irradiance_buffer, None)
         .expect("delta_irradiance uav");
+
+    let delta_irradiance_srv = backend
+        .shader_resource_view_buffer(&delta_irradiance_buffer, None)
+        .expect("dIr srv");
 
     let transmittance_shader =
         Shader::compute_shader(backend, "atmospheric_precompute_transmittance.hlsl", "main")
@@ -122,18 +136,75 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
                 .device_context
                 .CSSetConstantBuffers(0, 1, &Some(cbuffer.buffer.clone()));
 
+            backend.device_context.CSSetShaderResources(
+                0,
+                1,
+                [Some(transmittance_srv.clone())].as_ptr(),
+            );
+
             backend.device_context.CSSetUnorderedAccessViews(
                 0,
                 1,
-                [
-                    Some(transmittance_uav.clone()),
-                    Some(delta_irradiance_uav.clone()),
-                ]
-                .as_ptr(),
+                [Some(delta_irradiance_uav.clone())].as_ptr(),
                 std::ptr::null(),
             );
 
             backend.device_context.Dispatch(2, 16, 1);
+
+            backend
+                .device_context
+                .CSSetShader(None, std::ptr::null(), 0);
+
+            backend.unbind_shader_resources();
+
+            backend
+                .device_context
+                .CSSetUnorderedAccessViews(0, 1, &None, std::ptr::null());
+        }
+    }
+
+    let transmittance_texture = Tex2D::new(
+        backend,
+        TextureDescBuilder::new()
+            .bind_flags(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)
+            .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+            .mip_levels(1)
+            .size([256, 64, 0])
+            .build_texture2d(),
+    )
+    .expect("Create irradiance texture");
+
+    let transmittance_texture_uav = backend
+        .unordered_access_view(&transmittance_texture, None)
+        .expect("Create texture uav");
+
+    let copy_transmittance_shader = Shader::compute_shader(
+        backend,
+        "atmospheric_precompute_copy_transmittance.hlsl",
+        "main",
+    )
+    .expect("Create shader");
+    // Copy transmittance buffer to texture
+    if let Shader::Compute(shader, _) = copy_transmittance_shader {
+        unsafe {
+            backend
+                .device_context
+                .CSSetShader(shader.clone(), std::ptr::null(), 0);
+
+            backend.device_context.CSSetShaderResources(
+                0,
+                1,
+                [Some(transmittance_srv.clone())].as_ptr(),
+            );
+
+            backend.device_context.CSSetUnorderedAccessViews(
+                0,
+                1,
+                [Some(transmittance_texture_uav.clone())].as_ptr(),
+                std::ptr::null(),
+            );
+
+            backend.device_context.Dispatch(8, 64, 1);
 
             backend
                 .device_context
@@ -158,5 +229,49 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
     )
     .expect("Create irradiance texture");
 
-    irradiance_texture.device_texture()
+    let irradiance_texture_uav = backend
+        .unordered_access_view(&irradiance_texture, None)
+        .expect("Create texture uav");
+
+    let copy_irradiance_shader = Shader::compute_shader(
+        backend,
+        "atmospheric_precompute_copy_irradiance.hlsl",
+        "main",
+    )
+    .expect("Create shader");
+    // Copy irradiance buffer to texture
+    if let Shader::Compute(shader, _) = copy_irradiance_shader {
+        unsafe {
+            backend
+                .device_context
+                .CSSetShader(shader.clone(), std::ptr::null(), 0);
+
+            backend.device_context.CSSetShaderResources(
+                0,
+                1,
+                [Some(delta_irradiance_srv.clone())].as_ptr(),
+            );
+
+            backend.device_context.CSSetUnorderedAccessViews(
+                0,
+                1,
+                [Some(irradiance_texture_uav.clone())].as_ptr(),
+                std::ptr::null(),
+            );
+
+            backend.device_context.Dispatch(2, 16, 1);
+
+            backend
+                .device_context
+                .CSSetShader(None, std::ptr::null(), 0);
+
+            backend.unbind_shader_resources();
+
+            backend
+                .device_context
+                .CSSetUnorderedAccessViews(0, 1, &None, std::ptr::null());
+        }
+    }
+
+    (transmittance_texture, irradiance_texture)
 }
