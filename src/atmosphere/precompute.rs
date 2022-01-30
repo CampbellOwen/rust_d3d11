@@ -171,50 +171,50 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         }
     }
 
-    let single_inscatter_shader = Shader::compute_shader(
-        backend,
-        "atmospheric_precompute_single_inscatter.hlsl",
-        "main",
-    )
-    .expect("Create shader");
+    //let single_inscatter_shader = Shader::compute_shader(
+    //    backend,
+    //    "atmospheric_precompute_single_inscatter.hlsl",
+    //    "main",
+    //)
+    //.expect("Create shader");
 
-    // Compute Single Inscatter
-    if let Shader::Compute(shader, _) = single_inscatter_shader {
-        unsafe {
-            backend
-                .device_context
-                .CSSetShader(shader.clone(), std::ptr::null(), 0);
+    //// Compute Single Inscatter
+    //if let Shader::Compute(shader, _) = single_inscatter_shader {
+    //    unsafe {
+    //        backend
+    //            .device_context
+    //            .CSSetShader(shader.clone(), std::ptr::null(), 0);
 
-            backend
-                .device_context
-                .CSSetConstantBuffers(0, 1, &Some(cbuffer.buffer.clone()));
+    //        backend
+    //            .device_context
+    //            .CSSetConstantBuffers(0, 1, &Some(cbuffer.buffer.clone()));
 
-            backend.device_context.CSSetShaderResources(
-                0,
-                1,
-                [Some(transmittance_srv.clone())].as_ptr(),
-            );
+    //        backend.device_context.CSSetShaderResources(
+    //            0,
+    //            1,
+    //            [Some(transmittance_srv.clone())].as_ptr(),
+    //        );
 
-            backend.device_context.CSSetUnorderedAccessViews(
-                0,
-                1,
-                [Some(delta_inscatter_uav.clone())].as_ptr(),
-                std::ptr::null(),
-            );
+    //        backend.device_context.CSSetUnorderedAccessViews(
+    //            0,
+    //            1,
+    //            [Some(delta_inscatter_uav.clone())].as_ptr(),
+    //            std::ptr::null(),
+    //        );
 
-            backend.device_context.Dispatch(1, 128, 256);
+    //        backend.device_context.Dispatch(1, 128, 256);
 
-            backend
-                .device_context
-                .CSSetShader(None, std::ptr::null(), 0);
+    //        backend
+    //            .device_context
+    //            .CSSetShader(None, std::ptr::null(), 0);
 
-            backend.unbind_shader_resources();
+    //        backend.unbind_shader_resources();
 
-            backend
-                .device_context
-                .CSSetUnorderedAccessViews(0, 1, &None, std::ptr::null());
-        }
-    }
+    //        backend
+    //            .device_context
+    //            .CSSetUnorderedAccessViews(0, 1, &None, std::ptr::null());
+    //    }
+    //}
 
     let transmittance_texture = Tex2D::new(
         backend,
