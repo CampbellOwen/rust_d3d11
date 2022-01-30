@@ -11,9 +11,7 @@ SamplerState Sampler;
 float GetUVFromUnitRange(float x, int texture_size) {
   return 0.5 / (texture_size) + x * (1.0 - 1.0 / (texture_size));
 }
-            //atmos_bottom: 6360.0,
-            //atmos_top: 6420.0,
-float2 GetUVFromRMuS(float r, float mu_s) {
+float2 GetIrradianceUVFromRMuS(float r, float mu_s) {
     float y = (r - 6360.0) / (6420.0 - 6360.0);
     float x = mu_s * 0.5 + 0.5;
 
@@ -37,7 +35,7 @@ float4 main(float4 position : SV_POSITION, float2 uv: TEXCOORD) : SV_TARGET {
 
     float sun_zenith = dot(float3(0.0, 1.0, 0.0), dir_light);
 
-    float4 ir = irradiance.Sample(Sampler, GetUVFromRMuS(6360.0, sun_zenith));
+    float4 ir = irradiance.Sample(Sampler, GetIrradianceUVFromRMuS(6360.0, sun_zenith));
 
     float3 reflectance = (c.xyz / 3.14159) * (1 + dot(n.xyz, float3(0.0, 1.0, 0.0))) / 2;
 

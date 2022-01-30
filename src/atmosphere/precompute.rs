@@ -79,6 +79,14 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
         .shader_resource_view_buffer(&delta_irradiance_buffer, None)
         .expect("dIr srv");
 
+    let delta_inscatter_buffer =
+        GPUBuffer::structured_buffer::<Vec3>(backend, 32 * 128 * 32 * 8, true)
+            .expect("Create delta in scatter buffer");
+
+    let delta_inscatter_uav = backend
+        .unordered_access_view_buffer(&delta_inscatter_buffer, None)
+        .expect("uav");
+
     let transmittance_shader =
         Shader::compute_shader(backend, "atmospheric_precompute_transmittance.hlsl", "main")
             .expect("Create shader");
@@ -150,6 +158,51 @@ pub fn precompute_textures(backend: &Backend, constants: AtmosphericConstants) -
             );
 
             backend.device_context.Dispatch(2, 16, 1);
+
+            backend
+                .device_context
+                .CSSetShader(None, std::ptr::null(), 0);
+
+            backend.unbind_shader_resources();
+
+            backend
+                .device_context
+                .CSSetUnorderedAccessViews(0, 1, &None, std::ptr::null());
+        }
+    }
+
+    let single_inscatter_shader = Shader::compute_shader(
+        backend,
+        "atmospheric_precompute_single_inscatter.hlsl",
+        "main",
+    )
+    .expect("Create shader");
+
+    // Compute Single Inscatter
+    if let Shader::Compute(shader, _) = single_inscatter_shader {
+        unsafe {
+            backend
+                .device_context
+                .CSSetShader(shader.clone(), std::ptr::null(), 0);
+
+            backend
+                .device_context
+                .CSSetConstantBuffers(0, 1, &Some(cbuffer.buffer.clone()));
+
+            backend.device_context.CSSetShaderResources(
+                0,
+                1,
+                [Some(transmittance_srv.clone())].as_ptr(),
+            );
+
+            backend.device_context.CSSetUnorderedAccessViews(
+                0,
+                1,
+                [Some(delta_inscatter_uav.clone())].as_ptr(),
+                std::ptr::null(),
+            );
+
+            backend.device_context.Dispatch(1, 128, 256);
 
             backend
                 .device_context

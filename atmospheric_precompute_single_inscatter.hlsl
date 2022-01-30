@@ -6,6 +6,11 @@
 #define IRRADIANCE_WIDTH 64
 #define IRRADIANCE_HEIGHT 16
 
+#define INSCATTER_R_SIZE 32
+#define INSCATTER_MU_SIZE 128
+#define INSCATTER_MU_S_SIZE 32
+#define INSCATTER_NU_SIZE 8
+
 cbuffer AtmosphericConstants : register(b0) {
     float atmos_bottom;
     float atmos_top;
@@ -74,9 +79,37 @@ float2 RMusFromUV(float2 uv) {
     return float2(r, mu_s);
 }
 
+#define mod(x, y) (x - y * floor(x / y))
+
+float4 GetRMuMuSNuFromUVWZ(float4 uvwz, out bool intersects_ground) {
+
+}
+
+float4 GetRMuMuSNuFromUVW(float3 uvw, out bool intersects_ground) {
+    const float texture_sizes = float4(INSCATTER_NU_SIZE - 1, INSCATTER_MU_S_SIZE, INSCATTER_MU_SIZE, INSCATTER_R_SIZE);
+
+    float frag_nu = uvw.x / INSCATTER_MU_S_SIZE;
+
+    float frag_mu_s = mod(uvw.x, INSCATTER_MU_S_SIZE);
+
+    float4 uvwz = float4(frag_nu, frag_mu_s, uvw.y, uvw.z);
+
+    float4 rMuMusNu = GetRMuMuSNuFromUVWZ(uvwz, intersects_ground);
+
+    float r    = rMuMusNu.x;
+    float mu   = rMuMusNu.y;
+    float mu_s = rMuMusNu.z;
+    float nu   = rMuMusNu.w;
+
+    nu = clamp(nu, mu * mu_s - sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)), mu * mu_s + sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)));
+
+    return float4(r, mu, mu_s, nu);
+}
+
+
 [numthreads(32, 1, 1)]
 void main (uint3 DTid: SV_DispatchThreadId) {
-    float2 uv = float2(DTid.x / (IRRADIANCE_WIDTH - 1.0), DTid.y / (IRRADIANCE_HEIGHT - 1.0));
+    float2 uvwz = float2(DTid.x / (IRRADIANCE_WIDTH - 1.0), DTid.y / (IRRADIANCE_HEIGHT - 1.0));
 
 
     float2 r_mu = RMusFromUV(uv);
