@@ -7,13 +7,15 @@
 #define IRRADIANCE_HEIGHT 16
 
 cbuffer AtmosphericConstants : register(b0) {
+    float3 beta_rayleigh;
+    uint num_scattering;
+    float3 wave_lengths;
+    float mu_s_min;
+    float3 solar_irradiance;
     float atmos_bottom;
     float atmos_top;
     float Hm;
     float Hr;
-    float3 beta_rayleigh;
-    float3 wave_lengths;
-    uint num_scattering;
 };
 
 StructuredBuffer<float3> Transmittance : register(t0);
@@ -60,7 +62,7 @@ float3 GetTransmittance(float r, float mu) {
 
 float3 ComputeIrradiance(float r, float mu_s) {
     float3 attenuation = GetTransmittance(r, mu_s);
-    return attenuation * saturate(mu_s);
+    return attenuation * saturate(mu_s) * solar_irradiance;
 }
 
 float2 RMusFromUV(float2 uv) {

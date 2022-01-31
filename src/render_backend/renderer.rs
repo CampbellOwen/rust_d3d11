@@ -235,7 +235,7 @@ impl BasicRenderer {
             }));
 
         let consts = AtmosphericConstants::default();
-        let (transmittance, irradiance) = precompute_textures(backend, consts);
+        let (transmittance, irradiance, inscatter) = precompute_textures(backend, consts);
 
         let transmittance_srv = backend
             .shader_resource_view(&transmittance, None)
@@ -245,6 +245,10 @@ impl BasicRenderer {
             .shader_resource_view(&irradiance, None)
             .expect("Create irradiance srv");
 
+        let inscatter_srv = backend
+            .shader_resource_view(&inscatter, None)
+            .expect("Create inscatter srv");
+
         let gbuffer_combination_pass = RenderPass::new()
             .enable_depth(true)
             .depth_state(depth_stencil_state.clone())
@@ -253,6 +257,7 @@ impl BasicRenderer {
             .shader_resource(normal_srv)
             .shader_resource(transmittance_srv)
             .shader_resource(irradiance_srv)
+            .shader_resource(inscatter_srv)
             .sampler_state(sampler_state)
             .render_target(backbuffer_rtv.clone())
             .clear_rtv(true)

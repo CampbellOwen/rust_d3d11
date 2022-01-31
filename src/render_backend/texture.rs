@@ -100,6 +100,20 @@ impl TextureDescBuilder {
             MiscFlags: self.misc_flags,
         }
     }
+
+    pub fn build_texture3d(&self) -> D3D11_TEXTURE3D_DESC {
+        D3D11_TEXTURE3D_DESC {
+            Width: self.size[0],
+            Height: self.size[1],
+            Depth: self.size[2],
+            MipLevels: self.mip_levels,
+            Format: self.format,
+            Usage: self.usage,
+            BindFlags: self.bind_flags,
+            CPUAccessFlags: self.cpu_access_flags,
+            MiscFlags: self.misc_flags,
+        }
+    }
 }
 
 impl Default for TextureDescBuilder {

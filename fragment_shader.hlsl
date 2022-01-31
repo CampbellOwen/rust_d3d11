@@ -5,6 +5,7 @@ Texture2D normal : register(t2);
 
 Texture2D transmittance : register(t3);
 Texture2D irradiance : register(t4);
+Texture3D inscatter : register(t5);
 
 SamplerState Sampler;
 

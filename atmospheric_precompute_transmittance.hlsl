@@ -1,13 +1,15 @@
 #define TRANSMITTANCE_INTEGRAL_SAMPLES 1000
 
 cbuffer AtmosphericConstants : register(b0) {
+    float3 beta_rayleigh;
+    uint num_scattering;
+    float3 wave_lengths;
+    float mu_s_min;
+    float3 solar_irradiance;
     float atmos_bottom;
     float atmos_top;
     float Hm;
     float Hr;
-    float3 beta_rayleigh;
-    float3 wave_lengths;
-    uint num_scattering;
 };
 
 RWStructuredBuffer<float3> Transmittance : register(u0);
